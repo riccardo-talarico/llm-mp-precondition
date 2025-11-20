@@ -19,7 +19,7 @@ from langchain.messages import HumanMessage, SystemMessage
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import SummarizationMiddleware
-#from langchain.agents.middleware import FilesystemFileSearchMiddleware
+from langchain.agents.middleware import FilesystemFileSearchMiddleware
 
 
 
@@ -51,18 +51,19 @@ if __name__ == '__main__':
       SystemMessage(content='You are an expert verifier of go programs, given a go fragment provide '+
       'the weakest precondition that can ensure partial deadlock freedom ' +
       '(so the termination of all go routines). The user will provide a folder name and you will search for the main file inside it.' +
-      'If you can do this operation just return UNABLE'
+      'use the file_search middleware to find the file'+
+      'If you cant do this operation just return UNABLE and explain why you cant do it'
       ),
-      HumanMessage(content='circular-depdendency')
+      HumanMessage(content='circular-dependency')
   ]
 
   msg = {
     'messages': messages
   }
-  #file_search = FilesystemFileSearchMiddleware(
-  #  root_path="/benchmarks",
-  #  use_ripgrep=True  # Fast regex search
-  #)
+  file_search = FilesystemFileSearchMiddleware(
+    root_path="/benchmarks",
+    use_ripgrep=True  # Fast regex search
+  )
 
   # in production should use a memory backed by a database
   # summarization middleware to summarize messages
@@ -74,7 +75,7 @@ if __name__ == '__main__':
           model = llm,
           max_tokens_before_summary = 4000,
           messages_to_keep = 20
-        )
+        ), file_search
       ],
       #checkpointer = InMemorySaver()
       # state_schema = can pass CustomAgentState
@@ -83,11 +84,12 @@ if __name__ == '__main__':
     )
   
   response = agent.invoke(msg)
-  print(f"Response: {response['messages'][-1]}")
+  print(f"Full response object: {response}")
+  print("="*40)
+  print(f"Response: {response['messages'][-1].content}")
 
-  print(f"Available keys of response: {response['messages'].keys()}")
-  if "usage_metadata" in response["messages"].keys():
-    print(f"Metadata: {response['messages'].usage_metadata}")
+
+  print(f"Metadata: {response['messages'][-1].usage_metadata}")
 
 
 # TODO: load a file containing some code and let the agent analyze it
