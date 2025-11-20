@@ -20,6 +20,27 @@ from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import SummarizationMiddleware
 from langchain.agents.middleware import FilesystemFileSearchMiddleware
+#from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelRequestHandler
+from langchain.agents.middleware.types import ModelResponse
+
+#class LoggingMiddleware(AgentMiddleware):
+#    def wrap_model_call(self, request: ModelRequest, handler: ModelRequestHandler) -> ModelResponse:
+#        # Before the model runs
+#        print("=== Before model call ===")
+#        print("Messages:", request.state.messages)
+#        resp = handler(request)
+#        # After the model runs
+#        print("=== After model call ===")
+#        print("Model responded with:", resp)
+#        return resp
+#
+#    def wrap_tool_call(self, tool_name: str, tool_input: any, handler):
+#        # This is called when any tool is invoked
+#        print(f"Calling tool `{tool_name}` with input: {tool_input}")
+#        result = handler(tool_name, tool_input)
+#        print(f"Result from tool `{tool_name}`: {result}")
+#        return result
+
 
 
 
@@ -48,20 +69,20 @@ if __name__ == '__main__':
   """
 
   messages = [
-      SystemMessage(content='You are an expert verifier of go programs, given a go fragment provide '+
-      'the weakest precondition that can ensure partial deadlock freedom ' +
-      '(so the termination of all go routines). The user will provide a folder name and you will search for the main file inside it.' +
+      SystemMessage(content='The user will provide a folder name and you will search for the main file inside it.' +
       'use the file_search middleware to find the file'+
-      'If you cant do this operation just return UNABLE and explain why you cant do it'
+      '. Read the file and act as an expert verifier to provide '+
+      'the weakest precondition that can ensure partial deadlock freedom ' +
+      '(so the termination of all go routines) '
       ),
-      HumanMessage(content='circular-dependency')
+      HumanMessage(content='file-parser')
   ]
 
   msg = {
     'messages': messages
   }
   file_search = FilesystemFileSearchMiddleware(
-    root_path="/benchmarks",
+    root_path="./benchmarks",
     use_ripgrep=True  # Fast regex search
   )
 
