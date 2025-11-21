@@ -49,6 +49,22 @@ def get_tools_interactions(response):
     
     return interactions
 
+"""
+class LoggingMiddleware(AgentMiddleware):
+    def wrap_model_call(self, request: ModelRequest, handler: ModelRequestHandler) -> ModelResponse:
+        # Before the model runs
+        print("=== Before model call ===")
+        print("Messages:", request.state.messages)
+        resp = handler(request)
+        # After the model runs
+        print("=== After model call ===")
+        print("Model responded with:", resp)
+        return resp
 
-
-            
+    def wrap_tool_call(self, tool_name: str, tool_input: any, handler):
+        # This is called when any tool is invoked
+        print(f"Calling tool `{tool_name}` with input: {tool_input}")
+        result = handler(tool_name, tool_input)
+        print(f"Result from tool `{tool_name}`: {result}")
+        return result
+"""         
