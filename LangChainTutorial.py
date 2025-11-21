@@ -22,6 +22,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 from langchain.agents.middleware import FilesystemFileSearchMiddleware
 #from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelRequestHandler
 from langchain.agents.middleware.types import ModelResponse
+from utils.tool_analysis import log_tool_interactions
 
 #class LoggingMiddleware(AgentMiddleware):
 #    def wrap_model_call(self, request: ModelRequest, handler: ModelRequestHandler) -> ModelResponse:
@@ -41,7 +42,7 @@ from langchain.agents.middleware.types import ModelResponse
 #        print(f"Result from tool `{tool_name}`: {result}")
 #        return result
 
-
+# successful tool call: {'name': 'grep_search', 'args': {'path': 'file-parser', 'pattern': '.', 'include': 'main.go', 'output_mode': 'content'}, 'id': 'fc8744a2-f665-4bc0-8d64-290a18fd0847', 'type': 'tool_call'}]
 
 
 if __name__ == '__main__':
@@ -69,13 +70,18 @@ if __name__ == '__main__':
   """
 
   messages = [
-      SystemMessage(content='The user will provide a folder name and you will search for the main file inside it.' +
+      SystemMessage(content='The user will provide a folder name and you will search for the go file inside it.' +
       'use the file_search middleware to find the file'+
+      "If you find the file here are the args to pass to get access to the content: 'path': [dir_name], 'pattern': '.', 'include': '[filename].go', 'output_mode': 'content'"
       '. Read the file and act as an expert verifier to provide '+
       'the weakest precondition that can ensure partial deadlock freedom ' +
-      '(so the termination of all go routines) '
+      '(if you are not sure what the weakest precondition is, provide a general precondition, if you cannot even do this write UNKNOWN in the precondition field of the response and provide a concise explanation of why you dont have a precondition) '+
+      'The weakest precondition must regard the concurrency parameters of the fragment you are analyzing and must be a boolean expression'+
+      ' that can act as an assert condition. This is the structure of the response you must provide: '\
+      ' Concurrency parameters: [list of concurrency params]'\
+      ' Weakest Precondition: precondition'
       ),
-      HumanMessage(content='file-parser')
+      HumanMessage(content='negative-counter')
   ]
 
   msg = {
@@ -107,12 +113,8 @@ if __name__ == '__main__':
   response = agent.invoke(msg)
   print(f"Full response object: {response}")
   print("="*40)
-  print(f"Response: {response['messages'][-1].content}")
-
-
+  print(f"Response: {response['messages'][-1].content[0]['text']}")
+  
+  log_tool_interactions(response)
   print(f"Metadata: {response['messages'][-1].usage_metadata}")
 
-
-# TODO: load a file containing some code and let the agent analyze it
-# finish tutorial on semantic search with documents and then copy the code for creating
-# an agent that can use search engines/ other tools (?) and query it to analyze the code
