@@ -4,20 +4,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-#if not os.environ.get("GEMINI_API_KEY"):
-  #os.environ["GEMINI_API_KEY"] = getpass.getpass("Enter API key for Gemini: ")
-
-
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.messages import HumanMessage, SystemMessage
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
-from langchain.agents.middleware import SummarizationMiddleware
-from langchain.agents.middleware import FilesystemFileSearchMiddleware
+from langchain.agents.middleware import SummarizationMiddleware, FilesystemFileSearchMiddleware
 from utils.tool_analysis import log_tool_interactions
-
-# successful tool call: {'name': 'grep_search', 'args': {'path': 'file-parser', 'pattern': '.', 'include': 'main.go', 'output_mode': 'content'}, 'id': 'fc8744a2-f665-4bc0-8d64-290a18fd0847', 'type': 'tool_call'}]
 
 
 if __name__ == '__main__':
@@ -39,7 +32,7 @@ if __name__ == '__main__':
       ' Concurrency parameters: [list of concurrency params]'\
       ' Weakest Precondition: precondition'
       ),
-      HumanMessage(content='negative-counter')
+      HumanMessage(content='file-parser')
   ]
 
   msg = {
@@ -49,8 +42,7 @@ if __name__ == '__main__':
     root_path="./benchmarks",
     use_ripgrep=True  # Fast regex search
   )
-
-  # in production should use a memory backed by a database
+ 
   # summarization middleware to summarize messages
   agent = create_agent(
       model = llm, 
