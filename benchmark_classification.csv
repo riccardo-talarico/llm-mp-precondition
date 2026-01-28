@@ -1,0 +1,69 @@
+,id,subtype,subsubtype
+0,cockroach10214, Resource Deadlock , AB-BA deadlock 
+1,cockroach1055, Mixed Deadlock , Channel & WaitGroup 
+2,cockroach10790, Communication Deadlock , Channel & Context 
+3,cockroach13197, Communication Deadlock , Channel & Context 
+4,cockroach13755, Communication Deadlock , Channel & Context 
+5,cockroach1462, Mixed Deadlock , Channel & WaitGroup 
+6,cockroach16167, Resource Deadlock , Double Locking 
+7,cockroach18101, Resource Deadlock , Double Locking 
+8,cockroach2448, Communication Deadlock , Channel 
+9,cockroach24808, Communication Deadlock , Channel 
+10,cockroach25456, Communication Deadlock , Channel 
+11,cockroach35073, Communication Deadlock , Channel 
+12,cockroach35931, Communication Deadlock , Channel 
+13,cockroach3710, Resource Deadlock , RWR Deadlock 
+14,cockroach584, Resource Deadlock , Double Locking 
+15,cockroach6181, Resource Deadlock , RWR Deadlock 
+16,cockroach7504, Resource Deadlock , AB-BA Deadlock 
+17,cockroach9935, Resource Deadlock , Double Locking 
+18,etcd10492, Resource Deadlock , Double locking 
+19,etcd5509, Resource Deadlock , Double locking 
+20,etcd6708, Resource Deadlock , Double locking 
+21,etcd6857, Communication Deadlock , Channel 
+22,etcd6873, Mixed Deadlock , Channel & Lock 
+23,etcd7443, Mixed Deadlock , Channel & Lock 
+24,etcd7492, Mixed Deadlock , Channel & Lock 
+25,etcd7902, Mixed Deadlock , Channel & Lock 
+26,grpc1275, Communication Deadlock , Channel 
+27,grpc1353, Mixed Deadlock , Channel & Lock 
+28,grpc1424, Communication Deadlock , Channel 
+29,grpc1460, Mixed Deadlock , Channel & Lock 
+30,grpc3017, Resource Deadlock , Double locking 
+31,grpc660, Communication Deadlock , Channel 
+32,grpc795, Resource Deadlock , Double locking 
+33,grpc862, Communication Deadlock , Channel & Context 
+34,hugo3251, Resource Deadlock , AB-BA deadlock 
+35,hugo5379, Resource Deadlock , Double locking 
+36,istio16224, Mixed Deadlock , Channel & Lock 
+37,istio17860, Communication Deadlock , Channel 
+38,istio18454, Communication Deadlock , Channel & Context 
+39,kubernetes10182, Mixed Deadlock , Channel & Lock 
+40,kubernetes11298, Communication Deadlock , Channel & Condition Variable 
+41,kubernetes13135, Resource Deadlock , AB-BA deadlock 
+42,kubernetes1321, Mixed Deadlock , Channel & Lock 
+43,kubernetes25331, Communication Deadlock , Channel & Context 
+44,kubernetes26980, Mixed Deadlock , Channel & Lock 
+45,kubernetes30872, Resource Deadlock , AB-BA deadlock 
+46,kubernetes38669, Communication Deadlock , Channel 
+47,kubernetes5316, Communication Deadlock , Channel 
+48,kubernetes58107, Resource Deadlock , RWR deadlock 
+49,kubernetes62464, Resource Deadlock , RWR deadlock 
+50,kubernetes6632, Mixed Deadlock , Channel & Lock 
+51,kubernetes70277, Communication Deadlock , Channel 
+52,moby17176, Resource Deadlock , Double locking 
+53,moby21233, Communication Deadlock , Channel 
+54,moby25384, Mixed Deadlock , Misuse WaitGroup 
+55,moby27782, Communication Deadlock , Channel & Condition Variable 
+56,moby28462, Mixed Deadlock , Channel & Lock 
+57,moby29733, Communication Deadlock , Condition Variable 
+58,moby30408, Communication Deadlock , Condition Variable 
+59,moby33293, Communication Deadlock , Channel 
+60,moby33781, Communication Deadlock , Channel & Context 
+61,moby36114, Resource Deadlock , Double locking 
+62,moby4395, Communication Deadlock , Channel 
+63,moby4951, Resource Deadlock , AB-BA deadlock 
+64,moby7559, Resource Deadlock , Double locking 
+65,serving2137, Mixed Deadlock , Channel & Lock 
+66,syncthing4829, Resource Deadlock , Double locking 
+67,syncthing5795, Communication Deadlock , Channel 
