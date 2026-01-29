@@ -115,7 +115,7 @@ class VerificationAgent():
 '3.2 Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.'+
 'Verification Logic:'+
 'Assume Partial Context: If the snippet is missing a main function, assume the provided functions are called in a way that triggers the concurrency logic shown.'+
-'Strict Classification: Use the specific subtype (e.g. Mixed Deadlock) and subsubtype name (e.g., Channel & Lock) in your response.'
+'Strict Classification: Use only the specific subtype (e.g. Mixed Deadlock) and subsubtype name (e.g., Channel & Lock) in your response. Do not invent other labels.'
       ),
     ]
 
