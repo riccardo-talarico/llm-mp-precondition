@@ -1,5 +1,7 @@
 import os, re, sys
 import pandas as pd
+import numpy as np
+import ast
 
 
 
@@ -82,10 +84,36 @@ def remove_comments_from_all_benchmark():
                 f.truncate()
 
 
+def process_results_csv(model_name : str = 'qwen/qwen3-32b'):
+    file_name = f'benchmark_results_{model_name}.csv'
+    df = pd.read_csv(file_name)
+    df['classification'] = df['classification'].apply(ast.literal_eval)
+    # .apply(pd.Series) turns keys into column names and values into row data
+    classification_cols = df['classification'].apply(pd.Series)
+
+    # Merge back and drop the original column
+    df = pd.concat([df.drop(['classification'], axis=1), classification_cols], axis=1)
+
+    df = df.replace('None', np.nan)
+
+    # Remove leading numbers from 'subsubtype' (e.g., "1.2 ", "2.3 ")
+    # Regex explanation:
+    # ^      : Start of string
+    # \d+    : One or more digits
+    # \.     : A literal dot
+    # \d+    : One or more digits
+    # \s+    : One or more whitespace characters
+    df['subsubtype'] = df['subsubtype'].str.replace(r'^\d+\.\d+\s+', '', regex=True)
+    
+    df.to_csv(f'benchmark_results_{model_name}_clean.csv', index=False)
+
+    print(df.head())
+
 
 if __name__ == '__main__':
     #create_benchmark_labels()
-    remove_comments_from_all_benchmark()
+    #remove_comments_from_all_benchmark()
+    process_results_csv()
                 
     
     

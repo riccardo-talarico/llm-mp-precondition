@@ -1,5 +1,5 @@
 *.env
 __pycache__
 *.log
-benchmark_results.csv
+benchmark_results*
 gomela
