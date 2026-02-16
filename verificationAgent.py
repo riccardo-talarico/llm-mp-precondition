@@ -41,6 +41,7 @@ class VerificationAgent():
       self.llm = None  
     self.folder = benchmark_folder
     self.logging = logging
+    self.model = model
     self.usage_metadata = []
 
     # Defining JSON response schema
@@ -103,18 +104,19 @@ class VerificationAgent():
 'WaitGroup Safety: No negative counter values; no calls to Add() after Wait() has started; Done() must be called exactly the number of times specified in Add().'+
 'Mutex Safety: No unlocking of an already unlocked mutex; no copying of a sync.Mutex or sync.RWMutex after its first use.'+
 'Bug Classification Hierarchy (GoBench paper classification): If a blocking bug is detected, classify it into exactly one subtype and subsubtype based on these definitions:'+
-'1.Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes:'+
-'1.1 Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself.'+
-'1.2 AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A).'+
-'1.3 RWR Deadlock: Involving sync.RWMutex. A pending Write lock request takes priority, blocking subsequent Read requests even if the current lock is a Read lock, potentially creating a cycle if the current Reader waits for a new Reader.'+
-'2.Communication Deadlock: Goroutines block waiting for a message/signal from another. Subsubtypes:' +
-'2.1 Channel: Sending/Receiving on a channel where no counterpart is available to complete the handoff (e.g., unbuffered channel leaks).' +
-'2.2 Condition Variable: Misuse of sync.Cond (e.g., Wait() is called but Signal() or Broadcast() is never triggered due to logic errors).' +
-'2.3 WaitGroup: Calling Wait() on a sync.WaitGroup where the internal counter never reaches zero due to missing Done() calls.'+
-'2.4 Channel & Context/Condition Variable: Complex communication blocks involving the interaction of channels with context.Context cancellation or condition variables.'+
-'3.Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:'+
-'3.1 Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.'+
-'3.2 Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.'+
+'1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes:'+
+'1.1. Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself.'+
+'1.2. AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A).'+
+'1.3. RWR Deadlock: Involving sync.RWMutex. A pending Write lock request takes priority, blocking subsequent Read requests even if the current lock is a Read lock, potentially creating a cycle if the current Reader waits for a new Reader.'+
+'2. Communication Deadlock: Goroutines block waiting for a message/signal from another. Subsubtypes:' +
+'2.1. Channel: Sending/Receiving on a channel where no counterpart is available to complete the handoff (e.g., unbuffered channel leaks).' +
+'2.2. Condition Variable: Misuse of sync.Cond (e.g., Wait() is called but Signal() or Broadcast() is never triggered due to logic errors).' +
+'2.3. WaitGroup: Calling Wait() on a sync.WaitGroup where the internal counter never reaches zero due to missing Done() calls.'+
+'2.4. Channel & Context: Complex communication blocks involving the interaction of channels with context.'+
+'2.5. Channel & Condition Variable: Complex communication blocks involving the interaction of channels with condition variables.'+
+'3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:'+
+'3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.'+
+'3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.'+
 'Verification Logic:'+
 'Assume Partial Context: If the snippet is missing a main function, assume the provided functions are called in a way that triggers the concurrency logic shown.'+
 'Strict Classification: Use only the specific subtype (Resource Deadlock, Communication Deadlock or Mixed Deadlock) and subsubtype name (e.g., Channel & Lock) in your response. DO NOT USE OTHER LABELS.'+
@@ -199,10 +201,10 @@ class VerificationAgent():
     
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-scout-17b-16e-instruct,
 if __name__=='__main__':
-  a = VerificationAgent(provider='Groq',model='qwen/qwen3-32b',benchmark_folder='gomela/benchmarks/blocking')
+  a = VerificationAgent(provider='Groq',model='llama-3.3-70b-versatile',benchmark_folder='gomela/benchmarks/blocking')
   df = a.run_on_benchmark()
   print(a.usage_metadata)
   print(df)
-  df.to_csv("benchmark_results.csv", index=False)
+  df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
 
 
