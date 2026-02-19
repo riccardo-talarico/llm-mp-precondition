@@ -1,50 +1,13 @@
 from langgraph.graph import StateGraph, START, END
-from typing_extensions import TypedDict, Literal, List
-from pydantic import BaseModel, Field
-from IPython.display import Image
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
 from utils.prompts import *
+from utils.graph import *
 from langchain_groq import ChatGroq
 from langchain.messages import HumanMessage, SystemMessage
 
 load_dotenv()
-
-
-# TODO: add __str__ methods for all the structured output, to make it more readable for the LLM 
-class GoPrimitive(BaseModel):
-    name : str
-    type : str
-    function : str
-    scope : str
-
-class GoPrimitives(BaseModel):
-    primitives : List[GoPrimitive] | None
-
-class ActionStep(BaseModel):
-    goroutine : str
-    action : str
-
-class Trace(BaseModel):
-    interleaving_logic : str 
-    sequence : List[ActionStep]
-
-class BugClassification(BaseModel):
-    subtype : Literal["Resource Deadlock", "Communication Deadlock", "Mixed Deadlock"]
-    subsubtype : Literal[
-        "Double Locking", "AB-BA Deadlock", "RWR Deadlock",
-        "Channel", "Condition Variable", "WaitGroup", "Channel & Context", "Channel & Condition Variable",
-        "Channel & Lock", "Channel & WaitGroup"
-        ]
-
-class State(TypedDict):
-    code : str
-    concurrency_primitives : GoPrimitives 
-    classification : BugClassification | None
-    trace : Trace | None 
-
-
 
 class ChainOfDebugAgent():
     def __init__(self, provider : str, model : str):
@@ -156,13 +119,6 @@ class ChainOfDebugAgent():
         self.classification_prompt = CLASSIFICATION_PROMPT
 
 
-
-def save_graph_img(graph: StateGraph, name:str = "graph"):
-    img = Image(graph.get_graph(xray=True).draw_mermaid_png())
-
-    with open(f"{name}.png","wb") as f:
-        f.write(img.data)
-
 if __name__ == '__main__':
     a = ChainOfDebugAgent(provider='Google', model='gemini-2.5-flash')
     a.compile_chain(save_img=False)
@@ -170,4 +126,4 @@ if __name__ == '__main__':
     with open("gomela/benchmarks/blocking/cockroach/584/cockroach584_test.go", "r") as f:
         prg = f.read()
     
-    print(f"Reponse: {a.invoke(prg)}")
+    #print(f"Reponse: {a.invoke(prg)}")
