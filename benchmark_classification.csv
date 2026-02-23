@@ -1,4 +1,4 @@
-,id,subtype,subsubtype
+id,name,subtype,subsubtype
 0,cockroach10214,Resource Deadlock,AB-BA deadlock
 1,cockroach1055,Mixed Deadlock,Channel & WaitGroup
 2,cockroach10790,Communication Deadlock,Channel & Context

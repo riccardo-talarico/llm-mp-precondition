@@ -8,12 +8,8 @@ Focus exclusively on these primitives:
 - sync.Cond
 - select statements and goroutine spawns (go func())
 
-For every primitive found, you must provide:
-1. **Type**: The exact Go type or primitive name.
-2. **Function**: The name of the function where the primitive is declared or used.
-3. **Scope/Context**: A brief description of where it resides (e.g., "inside a for-loop," "guarded by an if-statement," "inside a select case").
-
-Output the results as a clear, structured list. Do not analyze bugs yet; just map the primitives.
+For every primitive found, follow the output schema.
+Do not analyze bugs; just map the primitives.
 """
 
 GENERATE_TRACE_PROMPT = """
@@ -21,18 +17,18 @@ You are a concurrency adversary. Using the provided map of Go primitives, your t
 
 Ignore the high-level business logic; focus only on how these primitives can interact in the worst possible order.
 
-**Step 1: Interleaving Description**
+**Step 1: interleaving_logic**
 Describe the logical sequence of events. Explain how the goroutines interact, which one holds a resource, and why another becomes blocked. Focus on the "Conflict Set" (e.g., Goroutine A waits for a channel that Goroutine B will never send to).
 
-**Step 2: Textual Timeline**
-Generate a strict chronological timeline of actions. Use the notation: `G[N]: [Action]`.
+**Step 2: sequence**
+Generate a strict chronological timeline of actions (list of actions). Use the keys: `goroutine: G[N], action: [Action]` for an action.
 Example:
 - G1: mu.Lock()
 - G2: mu.Lock() (blocked)
 - G1: ch <- val (blocked)
 - Result: Deadlock.
 
-Your goal is to find a specific order of actions that forces a VIOLATION of "Partial-Deadlock Freedom."
+Your goal is to find a specific order of actions that causes a blocking bug.
 
 Primitives:
 {primitives}
@@ -49,7 +45,7 @@ Analyze the following:
 3. **Capacity**: Does a channel's buffer size (if any) prevent the specific blocking sequence proposed?
 4. **Lifetime**: Does one goroutine's parent function exit and terminate the child before the trace can complete?
 
-If the trace is reachable, confirm the bug. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
+If the trace is reachable, confirm it and explain how. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
 Trace:
 {trace}
 """
@@ -70,4 +66,4 @@ You goal is to classify the bug illustrated by the trace through the GoBench pap
 '3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:
 '3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.
 '3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.
-Trace: {trace}"""
+Trace: {trace}, trace eval: {trace_eval}"""

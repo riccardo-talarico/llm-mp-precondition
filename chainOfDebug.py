@@ -10,7 +10,7 @@ from langchain.messages import HumanMessage, SystemMessage
 load_dotenv()
 
 class ChainOfDebugAgent():
-    def __init__(self, provider : str, model : str):
+    def __init__(self, provider : str, model : str, json_mode=False):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
         elif provider == 'Groq':
@@ -20,7 +20,11 @@ class ChainOfDebugAgent():
             self.llm = None
         self.graph = StateGraph(State)
         self.compiled = False
+        self.structured_output_method = "json_mode" if json_mode else "function_calling" 
         self.load_prompts()
+        
+        
+
     
     
     # 1. identify concurrency primitives and where they are used
@@ -31,12 +35,11 @@ class ChainOfDebugAgent():
     def _get_concurrency_primitives(self, state : State):
         """First call to identify concurrency structures and functions using them"""
 
-        structured_llm = self.llm.with_structured_output(GoPrimitives).with_retry(stop_after_attempt=1)
-
+        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method).with_retry(stop_after_attempt=1)
+        
         sys_prompt = SystemMessage(self.identify_concurrency_prompt)
         prog_prompt = HumanMessage(f"Code:\n {state['code']}")
         input = [sys_prompt, prog_prompt]
-
         msg = structured_llm.invoke(input)
         return {"concurrency_primitives": msg}
     
@@ -46,9 +49,8 @@ class ChainOfDebugAgent():
     # between this name and the synthesizer node
     def _identify_trace(self, state: State):
         """Second call to generate a problematic trace given the concurrency primitives identified"""
-        
         input = [SystemMessage(self.generate_trace_prompt.format(primitives=state["concurrency_primitives"])), HumanMessage("Code:\n"+state["code"])]
-        structured_llm = self.llm.with_structured_output(Trace)
+        structured_llm = self.llm.with_structured_output(Trace, method=self.structured_output_method)
         msg = structured_llm.invoke(input)
         return {"trace" : msg}
 
@@ -62,16 +64,17 @@ class ChainOfDebugAgent():
             
     def _ask_if_trace_is_possible(self, state : State):
         """Asking the llm to verify if the trace is possible or if it originates from an impossible execution path"""
-
         input = [SystemMessage(self.verify_trace_prompt.format(trace=state["trace"])),HumanMessage("Code:\n"+state["code"])]
-        msg = self.llm.invoke(input)
-        return {"trace":msg}
+        structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method)
+        msg = structured_llm.invoke(input)
+        return {"trace_eval":msg}
 
     def _create_classification(self, state : State):
         """Ask the llm to classify the bug, given the program and the problematic trace"""
 
-        input = [SystemMessage(self.classification_prompt.format(trace=state['trace'])), HumanMessage("Code:\n"+state["code"])]
-        msg = self.llm.invoke(input)
+        input = [SystemMessage(self.classification_prompt.format(trace=state['trace'], trace_eval=state["trace_eval"])), HumanMessage("Code:\n"+state["code"])]
+        structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method)
+        msg = structured_llm.invoke(input)
         return {"classification": msg}
     
     def _empty_classification(self, state: State):
@@ -117,13 +120,40 @@ class ChainOfDebugAgent():
         self.generate_trace_prompt = GENERATE_TRACE_PROMPT
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
+        
+        if self.structured_output_method == "json_mode":
+            add = "\nOutput must be a valid JSON object. Use the exact key names provided by the schema."
+            schema = "Schema: {schema}"
+            self.identify_concurrency_prompt += add +schema.format(schema="{primitives: list[GoPrimitive]}") +"\GoPrimitive Schema: {schema}".format(schema = "{name: , type: , function: , scope: }")
+            self.generate_trace_prompt += add
+            self.verify_trace_prompt += add
+            self.classification_prompt += add
 
-
+# llama-3.3-70b-versatile, qwen/qwen3-32b
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Google', model='gemini-2.5-flash')
+    a = ChainOfDebugAgent(provider='Groq', model='qwen/qwen3-32b', json_mode=True)
     a.compile_chain(save_img=False)
-    
+    import time
     with open("gomela/benchmarks/blocking/cockroach/584/cockroach584_test.go", "r") as f:
         prg = f.read()
-    
-    #print(f"Reponse: {a.invoke(prg)}")
+    res1 = a.invoke(prg)
+    print(f"Reponse: {res1}")
+    time.sleep(30)
+    print("="*70)
+    with open("gomela/benchmarks/blocking/cockroach/16167/cockroach16167_test.go", "r") as f:
+        prg = f.read()
+    res2 = a.invoke(prg)
+    print(f"Reponse: {res2}")
+    time.sleep(30)
+    print("="*70)
+    with open("gomela/benchmarks/blocking/cockroach/3710/cockroach3710_test.go", "r") as f:
+        prg = f.read()
+    res3 = a.invoke(prg)
+    print(f"Reponse: {res3}")
+
+    with open("./tool.log", "w") as f:
+        f.write(str(res1))
+        f.write("\n")
+        f.write(str(res2))
+        f.write("\n")
+        f.write(str(res3))
