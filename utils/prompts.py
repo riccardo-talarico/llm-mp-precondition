@@ -10,6 +10,7 @@ Focus exclusively on these primitives:
 
 For every primitive found, follow the output schema.
 Do not analyze bugs; just map the primitives.
+Respond with the following json schema: {schema}
 """
 
 GENERATE_TRACE_PROMPT = """
@@ -19,6 +20,7 @@ Ignore the high-level business logic; focus only on how these primitives can int
 
 **Step 1: interleaving_logic**
 Describe the logical sequence of events. Explain how the goroutines interact, which one holds a resource, and why another becomes blocked. Focus on the "Conflict Set" (e.g., Goroutine A waits for a channel that Goroutine B will never send to).
+Do not escape single quotes (e.g., use ', not \')
 
 **Step 2: sequence**
 Generate a strict chronological timeline of actions (list of actions). Use the keys: `goroutine: G[N], action: [Action]` for an action.
@@ -32,6 +34,34 @@ Your goal is to find a specific order of actions that causes a blocking bug.
 
 Primitives:
 {primitives}
+Respond with the following json schema: {schema}
+If you do not find any, return a valid empty list: {{primitives:[]}}
+"""
+
+GENERATE_TRACES_PROMPT = """
+You are a concurrency adversary. Using the provided map of Go primitives, your task is to hypothesize a LIST of "Problematic Traces": each problematic trace should result in a blocking bug (deadlock, leak, or hang).
+
+Ignore the high-level business logic; focus only on how these primitives can interact in the worst possible order.
+
+For each trace:
+**Step 1: interleaving_logic**
+Describe the logical sequence of events. Explain how the goroutines interact, which one holds a resource, and why another becomes blocked. Focus on the "Conflict Set" (e.g., Goroutine A waits for a channel that Goroutine B will never send to).
+Do not escape single quotes (e.g., use ', not \')
+**Step 2: sequence**
+Generate a strict chronological timeline of actions (list of actions). Use the keys: `goroutine: G[N], action: [Action]` for an action.
+Example:
+- G1: mu.Lock()
+- G2: mu.Lock() (blocked)
+- G1: ch <- val (blocked)
+- Result: Deadlock.
+
+Your goal is to find a specific order of actions that causes a blocking bug.
+Generate a reasonable amount of problematic traces.
+
+Primitives:
+{primitives}
+Respond with the following json schema: {schema}
+If you do not find any return a valid empty list: {{traces:[]}} 
 """
 
 VERIFY_TRACE_PROMPT = """
@@ -46,8 +76,10 @@ Analyze the following:
 4. **Lifetime**: Does one goroutine's parent function exit and terminate the child before the trace can complete?
 
 If the trace is reachable, confirm it and explain how. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
+Do not escape single quotes (e.g., use ', not \')
 Trace:
 {trace}
+Evaluate the trace with the following json schema: {schema}
 """
 
 CLASSIFICATION_PROMPT = """You are a Go Concurrency Expert and Bug classificator. You are given Go snippets of codes and an identified problematic trace that causes a bug
@@ -66,4 +98,5 @@ You goal is to classify the bug illustrated by the trace through the GoBench pap
 '3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:
 '3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.
 '3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.
-Trace: {trace}, trace eval: {trace_eval}"""
+Trace: {trace}, trace eval: {trace_eval}
+Respond with the following json schema: {schema}"""
