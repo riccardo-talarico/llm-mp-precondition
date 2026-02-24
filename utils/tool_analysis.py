@@ -14,6 +14,8 @@ logging.basicConfig(
 
 def log_tool_interactions(response):
     interactions = get_tools_interactions(response)
+    if interactions is None: 
+        return
     for id in interactions:
         logging.debug(f"Tool interaction: {interactions[id]}")
 
