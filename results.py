@@ -46,3 +46,5 @@ if __name__ == '__main__':
     print_results()
     print("="*80)
     print_results('benchmark_results_llama-3.3-70b-versatile_clean.csv')
+    print("="*80)
+    print_results("benchmark_results_moonshotai/kimi-k2-instruct-0905_clean.csv")

@@ -200,11 +200,23 @@ class VerificationAgent():
 
     
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-scout-17b-16e-instruct,
+# moonshotai/kimi-k2-instruct-0905
 if __name__=='__main__':
-  a = VerificationAgent(provider='Groq',model='llama-3.3-70b-versatile',benchmark_folder='gomela/benchmarks/blocking')
+  a = VerificationAgent(provider='Groq',model='moonshotai/kimi-k2-instruct-0905',benchmark_folder='gomela/benchmarks/blocking')
   df = a.run_on_benchmark()
   print(a.usage_metadata)
   print(df)
-  df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
+  stop = False
+  while not stop:
+    try:
+      df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
+      stop = True
+    except Exception as e:
+      stop = False
+      print(f"Exception: {e}")
+      i = input("Retry? [Y/N]")
+      if i != "Y":
+        stop = True
+    
 
 

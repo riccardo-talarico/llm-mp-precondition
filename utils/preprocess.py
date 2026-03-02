@@ -113,7 +113,7 @@ def process_results_csv(model_name : str = 'qwen/qwen3-32b'):
 if __name__ == '__main__':
     #create_benchmark_labels()
     #remove_comments_from_all_benchmark()
-    process_results_csv('llama-3.3-70b-versatile')
+    process_results_csv('moonshotai/kimi-k2-instruct-0905')
                 
     
     
