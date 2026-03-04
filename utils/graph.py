@@ -1,4 +1,7 @@
 from langgraph.graph import StateGraph
+from langgraph.types import Command
+from langchain_core.runnables import RunnableConfig
+from functools import wraps
 from typing_extensions import TypedDict, Literal, List
 from pydantic import BaseModel, Field, AliasChoices
 from IPython.display import Image
@@ -74,12 +77,29 @@ class BugClassification(BaseModel):
 
 class State(TypedDict):
     code : str
+    early_stop: bool
     concurrency_primitives : GoPrimitives 
     classification : BugClassification | None
     trace_list : Traces
     active_trace : Trace | None 
     trace_eval : TraceEvaluation | None
 
+
+
+def handle_early_exit(state_key : str):
+    def decorator(func):
+        @wraps(func)
+        def early_exit(self, state, config : RunnableConfig = None, **kwargs):
+            node_name = "unknown_node"
+            if config and "metadata" in config:
+                node_name = config["metadata"].get("langgraph_node", node_name)
+            result = func(self, state, config, node_name=node_name, **kwargs)
+            if isinstance(result,str) and result == "ABORTED":
+                return {'early_stop': True}
+            # Otherwise wrap the expected result in the corresponding key
+            return {state_key: result}
+        return early_exit
+    return decorator
 
 def save_graph_img(graph: StateGraph, name:str = "graph"):
     img = Image(graph.get_graph(xray=True).draw_mermaid_png())
@@ -92,4 +112,4 @@ def get_universal_template(model_cls):
     return {field: "string" for field in model_cls.model_fields}
 
 if __name__ == '__main__':
-    print(GoPrimitive.get_json_template())
+    print(GoPrimitive.model_json_schema())

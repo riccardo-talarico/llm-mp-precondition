@@ -1,4 +1,6 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import Command
+from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 from dotenv import load_dotenv
@@ -6,11 +8,17 @@ from utils.prompts import *
 from utils.graph import *
 from langchain_groq import ChatGroq
 from langchain.messages import HumanMessage, SystemMessage
+from utils.tool_analysis import log_tool_interactions
+from langchain.agents.structured_output import ToolStrategy
 
 load_dotenv()
 
+#TODO: substitue node 1 with a parsing function (python or C) to detect all the concurrency primitives
+# automatically. Idea: adding RAG to trace generations, so that it has possible examples.
+
+
 class ChainOfDebugAgent():
-    def __init__(self, provider : str, model : str, json_mode=False, debug_level: int = 0):
+    def __init__(self, provider : str, model : str, json_mode=False, debug_level: int = 0, logging = True):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
         elif provider == 'Groq':
@@ -23,40 +31,35 @@ class ChainOfDebugAgent():
         self.structured_output_method = "json_mode" if json_mode else "function_calling" 
         self.load_prompts()
         self.debug_level = debug_level
+        self.logging = logging
         
-    # 1. identify concurrency primitives and where they are used
-    # 2. what is a possible trace that could cause problems with the given concurrency structure
-    # 3. is this trace possible?
-    # 4. classify the bug
-
-    def _get_concurrency_primitives(self, state : State):
+    @handle_early_exit("concurrency_primitives")
+    def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
         """First call to identify concurrency structures and functions using them"""
+        schema = GoPrimitives.model_json_schema()
+        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method).with_retry(stop_after_attempt=3)
 
-        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method).with_retry(stop_after_attempt=1)
-        
-        sys_prompt = SystemMessage(self.identify_concurrency_prompt)
+        sys_prompt = SystemMessage(self.identify_concurrency_prompt.format(schema=schema))
         prog_prompt = HumanMessage(f"Code:\n {state['code']}")
         input = [sys_prompt, prog_prompt]
-        msg = structured_llm.invoke(input)
-        return {"concurrency_primitives": msg}
-    
+        #msg = structured_llm.invoke(input)
+        msg = self.try_to_invoke(input, structured_llm, node_name)        
+        return msg
 
-    def _identify_trace(self, state: State):
-        """Second call to generate a problematic trace given the concurrency primitives identified"""
-        input = [SystemMessage(self.generate_trace_prompt.format(primitives=state["concurrency_primitives"])), HumanMessage("Code:\n"+state["code"])]
-        structured_llm = self.llm.with_structured_output(Trace, method=self.structured_output_method)
-        msg = structured_llm.invoke(input)
-        return {"active_trace" : msg}
-    
-    def _generate_traces(self, state: State):
+    @handle_early_exit("trace_list")  
+    def _generate_traces(self, state: State, config: RunnableConfig, node_name: str = None):
         """Second call to generate a list of problematic traces, given the concurrency primitives identified"""
-        input = [SystemMessage(self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"])), HumanMessage("Code:\n"+state["code"])]
+        
+        schema = Traces.model_json_schema()
+        sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"], schema=schema)
+        input = [SystemMessage(sysprompt), HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method)
-        msg = structured_llm.invoke(input)
-
-        if self.debug_level > 0:
-            print(f"Traces produced: {len(msg.traces)}")
-        return {"trace_list": msg}
+        #msg = structured_llm.invoke(input)
+        msg = self.try_to_invoke(input, structured_llm, node_name)
+        #if self.debug_level > 0:
+        #    print(f"Traces produced: {len(msg.traces)}")
+        
+        return msg
     
     def _trace_selector(self, state:State):
         list = state["trace_list"]
@@ -82,31 +85,41 @@ class ChainOfDebugAgent():
     def _check_if_found_bug(self, state : State):
         """Guard node to check if the agent found a bug"""
         
-        # TODO: check logic for this
         if state["trace_eval"].reachable is False:
             return "NO BUG"
+        elif state['early_stop']:
+            return "STOP"
         else:
             return "FOUND"
-            
-    def _ask_if_trace_is_possible(self, state : State):
+    
+    @handle_early_exit("trace_eval")
+    def _ask_if_trace_is_possible(self, state : State, config: RunnableConfig, node_name: str = None):
         """Asking the llm to verify if the trace is possible or if it originates from an impossible execution path"""
-        input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"])),HumanMessage("Code:\n"+state["code"])]
+        
+        schema = TraceEvaluation.model_json_schema()
+        input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"], schema=schema)),HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method)
-        msg = structured_llm.invoke(input)
-        return {"trace_eval":msg}
+        msg = self.try_to_invoke(input,structured_llm, node_name)
+        return msg
 
-    def _create_classification(self, state : State):
+
+    @handle_early_exit("classification")
+    def _create_classification(self, state : State, config: RunnableConfig, node_name: str = None):
         """Ask the llm to classify the bug, given the program and the problematic trace"""
 
-        input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"])), HumanMessage("Code:\n"+state["code"])]
+        classification_schema = BugClassification.model_json_schema()
+        input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"], schema=classification_schema)), HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method)
-        msg = structured_llm.invoke(input)
-        return {"classification": msg}
+        msg = self.try_to_invoke(input,structured_llm, node_name)
+        return msg
     
     def _empty_classification(self, state: State):
         """Since no problematic trace was found, the classification is empty"""
-
         return {"classification" : None}
+    
+    def _early_termination(self, state : State):
+        """Routing function to handle early stopping"""
+        return "STOP" if state["early_stop"] else "NO STOP"
 
     def compile_chain(self, save_img=False):
         if self.compiled:
@@ -123,13 +136,16 @@ class ChainOfDebugAgent():
 
         # Connecting edges
         self.graph.add_edge(START, "get_concurrency_primitives")
-        self.graph.add_edge("get_concurrency_primitives", "generate_traces")
-        self.graph.add_edge("generate_traces","trace_selector")
+        self.graph.add_conditional_edges(
+            "get_concurrency_primitives", self._early_termination, {"STOP": END, "NO STOP": "generate_traces"})
+        self.graph.add_conditional_edges(
+            "generate_traces", self._early_termination, {"STOP": END, "NO STOP": "trace_selector"}
+        )
         self.graph.add_conditional_edges(
             "trace_selector", self._check_if_trace_list_is_empty, {"EMPTY": "empty_classification", "NOT EMPTY": "check_trace"}
         )
         self.graph.add_conditional_edges(
-            "check_trace", self._check_if_found_bug, {"NO BUG": "trace_selector", "FOUND": "create_classification"} 
+            "check_trace", self._check_if_found_bug, {"NO BUG": "trace_selector", "FOUND": "create_classification", "STOP": END} 
             )
         self.graph.add_edge("empty_classification", END)
         self.graph.add_edge("create_classification", END) 
@@ -141,37 +157,45 @@ class ChainOfDebugAgent():
             save_graph_img(self.graph, "chain_of_debug")    
 
     def invoke(self, code : str):
-        response = self.graph.invoke({"code":code})
+        response = self.graph.invoke({"code":code, "early_stop": False})
+        if self.logging:
+            log_tool_interactions(response)
         return response
+    
+    def try_to_invoke(self, msg, llm, node_name : str):
+        while True:
+            try:
+                response = llm.invoke(msg)
+                return response
+            except Exception as e:
+                print(f"Error in node: [{node_name}]:{e}")
+                # cleanest way is to use the interrupt function from langgraph
+                s = input("Abort graph call? [Y/N]")
+                if s == 'Y':
+                    return "ABORTED"
 
 
     def load_prompts(self):
         self.identify_concurrency_prompt = IDENTIFY_CONCURRENCY_PROMPT
-
-        #TODO: should I keep both prompts or just this one?
         self.generate_list_of_traces_prompt = GENERATE_TRACES_PROMPT
-        self.generate_trace_prompt = GENERATE_TRACE_PROMPT
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
-        
-        if self.structured_output_method == "json_mode":
-            add = "\nOutput must be a valid JSON object. Use the exact key names provided by the schema."
-            schema = "Schema: {schema}"
-            self.identify_concurrency_prompt += add +schema.format(schema="{primitives: list[GoPrimitive]}") +"\GoPrimitive Schema: {schema}".format(schema = "{name: , type: , function: , scope: }")
-            self.generate_trace_prompt += add
-            self.generate_list_of_traces_prompt += add
-            self.verify_trace_prompt += add
-            self.classification_prompt += add
 
-# llama-3.3-70b-versatile, qwen/qwen3-32b
+
+
+            
+
+
+
+# llama-3.3-70b-versatile, qwen/qwen3-32b, moonshotai/kimi-k2-instruct 
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.3-70b-versatile', json_mode=False, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='qwen/qwen3-32b', json_mode=True, debug_level=1)
     a.compile_chain(save_img=True)
-    with open("gomela/benchmarks/blocking/cockroach/1462/cockroach1462_test.go", "r") as f:
+    with open("gomela/benchmarks/blocking/kubernetes/5316/kubernetes5316_test.go", "r") as f:
         prg = f.read()
     res1 = a.invoke(prg)
     print(f"Reponse: {res1}")
-    with open("./tool.log", "w") as f:
+    with open("./tool.log", "a") as f:
         f.write(str(res1))
     #import time
     #with open("gomela/benchmarks/blocking/cockroach/584/cockroach584_test.go", "r") as f:
