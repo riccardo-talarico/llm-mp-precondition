@@ -53,7 +53,7 @@ id,name,subtype,subsubtype
 51,kubernetes70277,Communication Deadlock,Channel
 52,moby17176,Resource Deadlock,Double locking
 53,moby21233,Communication Deadlock,Channel
-54,moby25384,Mixed Deadlock,Misuse WaitGroup
+54,moby25384,Mixed Deadlock,WaitGroup
 55,moby27782,Communication Deadlock,Channel & Condition Variable
 56,moby28462,Mixed Deadlock,Channel & Lock
 57,moby29733,Communication Deadlock,Condition Variable
