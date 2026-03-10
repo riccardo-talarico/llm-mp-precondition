@@ -48,3 +48,8 @@ if __name__ == '__main__':
     print_results('benchmark_results_llama-3.3-70b-versatile_clean.csv')
     print("="*80)
     print_results("benchmark_results_moonshotai/kimi-k2-instruct-0905_clean.csv")
+    print("="*80)
+    print_results("benchmark_results_meta-llama/llama-4-maverick-17b-128e-instruct_clean.csv")
+    print("="*80)
+    print("llama-maverick COD")
+    print_results("benchmark_results_meta-llama/llama-4-maverick-17b-128e-instruct_COD.csv")
