@@ -199,10 +199,10 @@ class VerificationAgent():
         self.usage_metadata.append((msg_id,msg.usage_metadata))
 
     
-#Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-scout-17b-16e-instruct,
+#Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-maverick-17b-128e-instruct,
 # moonshotai/kimi-k2-instruct-0905
 if __name__=='__main__':
-  a = VerificationAgent(provider='Groq',model='moonshotai/kimi-k2-instruct-0905',benchmark_folder='gomela/benchmarks/blocking')
+  a = VerificationAgent(provider='Groq',model='meta-llama/llama-4-maverick-17b-128e-instruct',benchmark_folder='gomela/benchmarks/blocking')
   df = a.run_on_benchmark()
   print(a.usage_metadata)
   print(df)

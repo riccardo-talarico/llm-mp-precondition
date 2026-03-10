@@ -2,7 +2,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
-import os
+import os, time
+import pandas as pd
+import json
 from dotenv import load_dotenv
 from utils.prompts import *
 from utils.graph import *
@@ -15,6 +17,7 @@ load_dotenv()
 
 #TODO: substitue node 1 with a parsing function (python or C) to detect all the concurrency primitives
 # automatically. Idea: adding RAG to trace generations, so that it has possible examples.
+#TODO: try to delete the json schema from the prompts
 
 
 class ChainOfDebugAgent():
@@ -39,7 +42,7 @@ class ChainOfDebugAgent():
         schema = GoPrimitives.model_json_schema()
         structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method).with_retry(stop_after_attempt=3)
 
-        sys_prompt = SystemMessage(self.identify_concurrency_prompt.format(schema=schema))
+        sys_prompt = SystemMessage(self.identify_concurrency_prompt)
         prog_prompt = HumanMessage(f"Code:\n {state['code']}")
         input = [sys_prompt, prog_prompt]
         #msg = structured_llm.invoke(input)
@@ -51,7 +54,7 @@ class ChainOfDebugAgent():
         """Second call to generate a list of problematic traces, given the concurrency primitives identified"""
         
         schema = Traces.model_json_schema()
-        sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"], schema=schema)
+        sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"])
         input = [SystemMessage(sysprompt), HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method)
         #msg = structured_llm.invoke(input)
@@ -97,7 +100,7 @@ class ChainOfDebugAgent():
         """Asking the llm to verify if the trace is possible or if it originates from an impossible execution path"""
         
         schema = TraceEvaluation.model_json_schema()
-        input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"], schema=schema)),HumanMessage("Code:\n"+state["code"])]
+        input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"])),HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method)
         msg = self.try_to_invoke(input,structured_llm, node_name)
         return msg
@@ -108,7 +111,7 @@ class ChainOfDebugAgent():
         """Ask the llm to classify the bug, given the program and the problematic trace"""
 
         classification_schema = BugClassification.model_json_schema()
-        input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"], schema=classification_schema)), HumanMessage("Code:\n"+state["code"])]
+        input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"])), HumanMessage("Code:\n"+state["code"])]
         structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method)
         msg = self.try_to_invoke(input,structured_llm, node_name)
         return msg
@@ -181,43 +184,68 @@ class ChainOfDebugAgent():
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
 
+    def run_on_benchmark(self, folder, save_usage_metadata=True):
+        projects = os.listdir(folder)
+        classification_data = {'id':[], 'classification': []}
+        #usage_metadata = []
+        verified_prg = 0
+        for proj in projects:
+            proj_folder = os.path.join(folder,proj)
+            for fragment in os.listdir(proj_folder):
+                frag_path = os.path.join(proj_folder, fragment)
+                frag_path = os.path.join(frag_path, proj+fragment+"_test.go")
 
+                with open(frag_path, "r") as f:
+                    print(f"File: {frag_path}")
+                    prog = f.read()
+                    response = self.invoke(prog)
+                    classification_data['classification'].append(response['classification'])
+                    print(f"{response['classification']}")
+                    verified_prg+=1
 
+                #if save_usage_metadata:
+                #    self.get_usage_metadata(response, verified_prg-1)
+
+                    print(f"Progress: {verified_prg}/68")
+                    print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
+                    time.sleep(10)
             
+        classification_data['id'] = [i for i in range(verified_prg)]
+        
+        res = self.try_into_dataframe(classification_data)
+        return res
+    
+    def try_into_dataframe(self, data):
+        try:
+            res = pd.DataFrame(data)
+        except Exception as e:
+            print(f"Error while transforming into dataframe: {e}")
+            res = pd.DataFrame()
+            with open("result_"+self.model+".json", "w") as f:
+                f.write(json.dumps(data, indent=4))
+        return res
 
 
 
-# llama-3.3-70b-versatile, qwen/qwen3-32b, moonshotai/kimi-k2-instruct 
+# llama-3.3-70b-versatile, qwen/qwen3-32b (No support tool calling), 
+# moonshotai/kimi-k2-instruct, llama-3.1-8b-instant
+# meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
+# meta-llama/llama-4-maverick-17b-128e-instruct
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='qwen/qwen3-32b', json_mode=True, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant', json_mode=False, debug_level=1)
     a.compile_chain(save_img=True)
-    with open("gomela/benchmarks/blocking/kubernetes/5316/kubernetes5316_test.go", "r") as f:
-        prg = f.read()
-    res1 = a.invoke(prg)
-    print(f"Reponse: {res1}")
-    with open("./tool.log", "a") as f:
-        f.write(str(res1))
-    #import time
-    #with open("gomela/benchmarks/blocking/cockroach/584/cockroach584_test.go", "r") as f:
+
+    df = a.run_on_benchmark("gomela/benchmarks/blocking")
+    df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
+    #with open("gomela/benchmarks/blocking/kubernetes/5316/kubernetes5316_test.go", "r") as f:
     #    prg = f.read()
     #res1 = a.invoke(prg)
     #print(f"Reponse: {res1}")
-    #time.sleep(30)
-    #print("="*70)
-    #with open("gomela/benchmarks/blocking/cockroach/16167/cockroach16167_test.go", "r") as f:
-    #    prg = f.read()
-    #res2 = a.invoke(prg)
-    #print(f"Reponse: {res2}")
-    #time.sleep(30)
-    #print("="*70)
-    #with open("gomela/benchmarks/blocking/cockroach/3710/cockroach3710_test.go", "r") as f:
-    #    prg = f.read()
-    #res3 = a.invoke(prg)
-    #print(f"Reponse: {res3}")
-#
-    #with open("./tool.log", "w") as f:
+    #try:
+    #    print(res1['classification'])
+    #except Exception as e:
+    #    print(f"Cannot access this field: {e}")
+    #    print(res1.keys())
+    #with open("./tool.log", "a") as f:
     #    f.write(str(res1))
-    #    f.write("\n")
-    #    f.write(str(res2))
-    #    f.write("\n")
-    #    f.write(str(res3))
+
