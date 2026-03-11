@@ -113,7 +113,7 @@ def process_results_csv(model_name : str = 'qwen/qwen3-32b'):
 if __name__ == '__main__':
     #create_benchmark_labels()
     #remove_comments_from_all_benchmark()
-    process_results_csv('meta-llama/llama-4-maverick-17b-128e-instruct')
+    process_results_csv('llama-3.1-8b-instant')
                 
     
     

@@ -53,3 +53,5 @@ if __name__ == '__main__':
     print("="*80)
     print("llama-maverick COD")
     print_results("benchmark_results_meta-llama/llama-4-maverick-17b-128e-instruct_COD.csv")
+    print("="*80)
+    print_results('benchmark_results_llama-3.1-8b-instant_clean.csv')
