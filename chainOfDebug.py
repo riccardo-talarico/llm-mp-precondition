@@ -8,6 +8,7 @@ import json
 from dotenv import load_dotenv
 from utils.prompts import *
 from utils.graph import *
+from utils.go_parsing import parse_go_concurrency
 from langchain_groq import ChatGroq
 from langchain.messages import HumanMessage, SystemMessage
 from utils.tool_analysis import log_tool_interactions
@@ -35,17 +36,9 @@ class ChainOfDebugAgent():
         self.debug_level = debug_level
         self.logging = logging
         
-    @handle_early_exit("concurrency_primitives")
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
-        """First call to identify concurrency structures and functions using them"""
-        schema = GoPrimitives.model_json_schema()
-        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method, include_raw=True).with_retry(stop_after_attempt=3)
-
-        sys_prompt = SystemMessage(self.identify_concurrency_prompt)
-        prog_prompt = HumanMessage(f"Code:\n {state['code']}")
-        input = [sys_prompt, prog_prompt]
-        msg = self.try_to_invoke(input, structured_llm, node_name)        
-        return msg
+        """First node: runs a script to identify concurrency structures and functions using them"""        
+        return {'concurrency_primitives': parse_go_concurrency(state['code'])}
 
     @handle_early_exit("trace_list")  
     def _generate_traces(self, state: State, config: RunnableConfig, node_name: str = None):

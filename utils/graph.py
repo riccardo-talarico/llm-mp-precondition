@@ -2,28 +2,10 @@ from langgraph.graph import StateGraph
 from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig
 from functools import wraps
-from typing_extensions import TypedDict, Literal, List
+from typing_extensions import TypedDict, Literal, List, Annotated
+from operator import add
 from pydantic import BaseModel, Field, AliasChoices
 from IPython.display import Image
-
-# TODO: add __str__ methods for all the structured output, to make it more readable for the LLM 
-class GoPrimitive(BaseModel):
-    name : str = Field(validation_alias=AliasChoices("name","Name"), description="The identifier of the primitive.")
-    type : str = Field(validation_alias = AliasChoices("type","Type"), description="The exact Go type or primitive name (e.g., sync.Mutex, chan).")
-    function : str = Field(validation_alias = AliasChoices("function","Function"), description="The name of the function where the primitive is declared or used.")
-    scope : str = Field(validation_alias = AliasChoices("scope","scope/context", "Scope"), description="The code context (e.g., 'inside a for-loop', 'guarded by an if-statement').")
-    
-    @classmethod
-    def get_json_template(cls):
-        json_template = """{"name": "string","type": "string","function":"string","scope":"string"}"""
-        return json_template
-
-
-class GoPrimitives(BaseModel):
-    primitives : List[GoPrimitive] | None = Field(validation_alias=AliasChoices("primitives","concurrency_primitives", "Primitives", "Concurrency_primitives"))
-    @classmethod
-    def get_json_template(cls):
-        return """{"primitives": [{"name": "string", "type": "string", "function": "string", "scope": "string"}]}"""
 
 
 class Trace(BaseModel):
@@ -72,7 +54,9 @@ class BugClassification(BaseModel):
 class State(TypedDict):
     code : str
     early_stop: bool
-    concurrency_primitives : GoPrimitives 
+    # Keeps a list of reasoning tokens, the field is not overwritten every time
+    reasoning: Annotated[List[str], add]
+    concurrency_primitives : str 
     classification : BugClassification | None
     trace_list : Traces
     active_trace : Trace | None 
@@ -91,7 +75,11 @@ def handle_early_exit(state_key : str):
             if isinstance(result,str) and result == "ABORTED":
                 return {'early_stop': True}
             # Otherwise wrap the expected result in the corresponding key
-            return {state_key: result}
+            try:
+                reasoning = result['raw'].additional_kwargs.get("reasoning_content")
+            except Exception as e:
+                print(f"Cannot extract reasoning tokens: {e}")
+            return {state_key: result['parsed'], 'reasoning_log': [reasoning]}
         return early_exit
     return decorator
 
