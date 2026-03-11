@@ -25,21 +25,15 @@ class GoPrimitives(BaseModel):
     def get_json_template(cls):
         return """{"primitives": [{"name": "string", "type": "string", "function": "string", "scope": "string"}]}"""
 
-class ActionStep(BaseModel):
-    goroutine : str = Field(validation_alias=AliasChoices("goroutine","Routine","Goroutine","go_routine"))
-    action : str = Field(validation_alias = AliasChoices("action","Action"))
-    @classmethod
-    def get_json_template(cls):
-        return """{"goroutine": "string","action": "string"}"""
 
 class Trace(BaseModel):
     interleaving_logic : str = Field(
         validation_alias=AliasChoices("interleaving_logic","Logic","logic","Interleaving_logic"),
         description = "Concise explanation of the logic of the trace"
         )
-    sequence : List[ActionStep] = Field(
+    sequence : List[str] = Field(
         validation_alias=AliasChoices("sequence","Sequence"),
-        description = "List of ActionStep that compose the trace"
+        description = "List of action step (strings that describe the action) that compose the trace"
         )
     @classmethod
     def get_json_template(cls):

@@ -21,14 +21,13 @@ Ignore the high-level business logic; focus only on how these primitives can int
 For each trace:
 **Step 1: interleaving_logic**
 Describe the logical sequence of events. Explain how the goroutines interact, which one holds a resource, and why another becomes blocked. Focus on the "Conflict Set" (e.g., Goroutine A waits for a channel that Goroutine B will never send to).
-Do not escape single quotes (e.g., use ', not \')
+
 **Step 2: sequence**
-Generate a strict chronological timeline of actions (list of actions). Use the keys: `goroutine: G[N], action: [Action]` for an action.
+Generate a strict chronological timeline of actions (list of actions). Use the string: `G[N]: [Action]` for an action.
 Example:
 - G1: mu.Lock()
 - G2: mu.Lock() (blocked)
 - G1: ch <- val (blocked)
-- Result: Deadlock.
 
 Your goal is to find a specific order of actions that causes a blocking bug.
 Generate a reasonable amount of problematic traces.
@@ -36,6 +35,7 @@ Generate a reasonable amount of problematic traces.
 Primitives:
 {primitives}
 If you do not find any return a valid empty list: {{traces:[]}} 
+Do not escape single quotes (e.g., use ', not \')
 """
 
 VERIFY_TRACE_PROMPT = """
@@ -50,9 +50,9 @@ Analyze the following:
 4. **Lifetime**: Does one goroutine's parent function exit and terminate the child before the trace can complete?
 
 If the trace is reachable, confirm it and explain how. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
-Do not escape single quotes (e.g., use ', not \')
 Trace:
 {trace}
+Do not escape single quotes (e.g., use ', not \')
 """
 
 CLASSIFICATION_PROMPT = """You are a Go Concurrency Expert and Bug classificator. You are given Go snippets of codes and an identified problematic trace that causes a bug
