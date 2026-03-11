@@ -17,16 +17,6 @@ from utils.tool_analysis import log_tool_interactions
 import pandas as pd
 
 
-properties = ['partial deadlock', 'channel safety', 'waitgroup safety', 'mutex safety']
-
-def get_property_schema(property_name):
-  return {
-    'type':'string',
-    'description': "Return true if the program satisfies " + property_name +
-    ", otherwise return false and a brief explanation of why it violates the property."
-  }
-
-
 class VerificationAgent():
 
   def __init__(self, benchmark_folder,provider='Google',model="gemini-2.5-flash", propose_fix=False, logging = True):
@@ -45,7 +35,7 @@ class VerificationAgent():
     self.usage_metadata = []
 
     # Defining JSON response schema
-    properties_schemas = {property_name: get_property_schema(property_name) for property_name in properties}
+    properties_schemas = {}
     properties_schemas['categorization'] = {
       'type': "object",
       'description':"Provide a categorization for the bug found in the code based on the GoBench paper classification",
@@ -69,41 +59,13 @@ class VerificationAgent():
       }
       self.response_schema['required'].append('proposed_fix')
     
-    # Creating tools and middlewares
-    file_search = FilesystemFileSearchMiddleware(
-      root_path="./" + self.folder,
-      use_ripgrep=True  # Fast regex search
-      )
-    summary = SummarizationMiddleware(
-      model=self.llm, 
-      trigger=("tokens", 4000),
-      keep=("messages", 20)
-      )
-
-    # Creating agent
-    self.agent = create_agent(
-      model = self.llm, 
-      tools = [],
-      middleware = [
-        file_search,
-        summary
-      ],
-      response_format = ToolStrategy(self.response_schema)
-      #checkpointer = InMemorySaver(),
-    )
-    
-    self.config : RunnableConfig = {"configurable": {"thread_id": "1"}}
-  
+    self.agent = self.llm.with_structured_output(self.response_schema, method="json_mode", include_raw=True)
+      
   def run_on_benchmark(self, save_usage_metadata=True):
     projects = os.listdir(self.folder)
 
-    sysMsg = SystemMessage(content='Role: You are a Go Concurrency Expert and Program Verifier. Your task is to analyze Go code snippets to identify and classify blocking bugs according to the GoBench framework.'+\
-'Property Verification Criteria: For each snippet, evaluate the following four properties. A "VIOLATION" occurs if any execution trace leads to the described state.'+
-'Partial-Deadlock Freedom: Every goroutine must eventually reach its exit point. If even a single goroutine is leaked (blocks forever), this property is VIOLATED.'+
-'Channel Safety: No operations that cause runtime panics (sending to or closing a closed channel; closing a nil channel).'+
-'WaitGroup Safety: No negative counter values; no calls to Add() after Wait() has started; Done() must be called exactly the number of times specified in Add().'+
-'Mutex Safety: No unlocking of an already unlocked mutex; no copying of a sync.Mutex or sync.RWMutex after its first use.'+
-'Bug Classification Hierarchy (GoBench paper classification): If a blocking bug is detected, classify it into exactly one subtype and subsubtype based on these definitions:'+
+    sysMsg = SystemMessage(content='Role: You are a Go Concurrency Expert and Program Verifier. Your task is to analyze Go code snippets to identify and classify blocking bugs according to the following hierarchy.'+\
+'Bug Classification Hierarchy: If a blocking bug is detected, classify it into exactly one subtype and subsubtype based on these definitions:'+
 '1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes:'+
 '1.1. Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself.'+
 '1.2. AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A).'+
@@ -120,7 +82,7 @@ class VerificationAgent():
 'Verification Logic:'+
 'Assume Partial Context: If the snippet is missing a main function, assume the provided functions are called in a way that triggers the concurrency logic shown.'+
 'Strict Classification: Use only the specific subtype (Resource Deadlock, Communication Deadlock or Mixed Deadlock) and subsubtype name (e.g., Channel & Lock) in your response. DO NOT USE OTHER LABELS.'+
-'If no bug is found (No property is violated) then insert None both as the subtype and subsubtype'
+'If no bug is found then insert None both as the subtype and subsubtype. Follow the JSON structure provided'
       )
     classification_data = {'id':[], 'classification': []}
     usage_metadata = []
@@ -135,18 +97,18 @@ class VerificationAgent():
           print(f"File: {frag_path}")
           prog = f.read()
           messages = [sysMsg, HumanMessage(content=prog)]
-          msg = {'messages': messages}
           default_response = {
             'categorization': {'subsubtype': 'Skipped', 'subtype': 'Skipped'},
-            'channel safety':'Skipped',
-            'partial deadlock':'Skipped',
-            'waitgroup safety': 'Skipped',
-            'mutex safety': 'Skipped'
           }
-          default_response = {'structured_response': default_response}
-          response = self.try_to_invoke(msg, default_response)
-          classification_data['classification'].append(response['structured_response']['categorization'])
-          print(f"{response['structured_response']}")
+          response = self.try_to_invoke(messages, default_response)
+          print(f"{response['parsed']}")
+          try:
+            reasoning = response['raw'].additional_kwargs.get("reasoning_content")
+            print(f"Reasoning:{reasoning}")
+          except Exception as e:
+            print(f"Cannot extract reasoning tokens: {e}")
+
+          classification_data['classification'].append(response['parsed'])
           verified_prg+=1
           
           if save_usage_metadata:
@@ -167,7 +129,7 @@ class VerificationAgent():
   def try_to_invoke(self, msg, default_response):
     while True:
       try:
-        response = self.agent.invoke(msg, self.config)
+        response = self.agent.invoke(msg)
         return response
       except Exception as e:
         print(f"Error while invoking the model {e}")
@@ -189,9 +151,9 @@ class VerificationAgent():
 
     if isinstance(response, dict):
       try:
-        response = response['messages']
-      except KeyError:
-        self.usage_metadata.append(f"Unable to fetch the response, Key error: messages")
+        response = response['raw']
+      except Exception as e:
+        self.usage_metadata.append(f"Unable to fetch the response. {e}")
         return
 
     for msg in response:
@@ -202,7 +164,7 @@ class VerificationAgent():
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-maverick-17b-128e-instruct,
 # moonshotai/kimi-k2-instruct-0905
 if __name__=='__main__':
-  a = VerificationAgent(provider='Groq',model='meta-llama/llama-4-maverick-17b-128e-instruct',benchmark_folder='gomela/benchmarks/blocking')
+  a = VerificationAgent(provider='Groq',model='llama-3.1-8b-instant',benchmark_folder='gomela/benchmarks/blocking')
   df = a.run_on_benchmark()
   print(a.usage_metadata)
   print(df)
