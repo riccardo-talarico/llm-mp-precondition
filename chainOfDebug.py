@@ -17,7 +17,6 @@ load_dotenv()
 
 #TODO: substitue node 1 with a parsing function (python or C) to detect all the concurrency primitives
 # automatically. Idea: adding RAG to trace generations, so that it has possible examples.
-#TODO: try to delete the json schema from the prompts
 
 
 class ChainOfDebugAgent():
@@ -40,12 +39,11 @@ class ChainOfDebugAgent():
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
         """First call to identify concurrency structures and functions using them"""
         schema = GoPrimitives.model_json_schema()
-        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method).with_retry(stop_after_attempt=3)
+        structured_llm = self.llm.with_structured_output(GoPrimitives, method=self.structured_output_method, include_raw=True).with_retry(stop_after_attempt=3)
 
         sys_prompt = SystemMessage(self.identify_concurrency_prompt)
         prog_prompt = HumanMessage(f"Code:\n {state['code']}")
         input = [sys_prompt, prog_prompt]
-        #msg = structured_llm.invoke(input)
         msg = self.try_to_invoke(input, structured_llm, node_name)        
         return msg
 
@@ -56,12 +54,9 @@ class ChainOfDebugAgent():
         schema = Traces.model_json_schema()
         sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"])
         input = [SystemMessage(sysprompt), HumanMessage("Code:\n"+state["code"])]
-        structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method)
-        #msg = structured_llm.invoke(input)
+        structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method, include_raw=True)
         msg = self.try_to_invoke(input, structured_llm, node_name)
-        #if self.debug_level > 0:
-        #    print(f"Traces produced: {len(msg.traces)}")
-        
+
         return msg
     
     def _trace_selector(self, state:State):
@@ -101,7 +96,7 @@ class ChainOfDebugAgent():
         
         schema = TraceEvaluation.model_json_schema()
         input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"])),HumanMessage("Code:\n"+state["code"])]
-        structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method)
+        structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method, include_raw=True)
         msg = self.try_to_invoke(input,structured_llm, node_name)
         return msg
 
@@ -112,7 +107,7 @@ class ChainOfDebugAgent():
 
         classification_schema = BugClassification.model_json_schema()
         input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"])), HumanMessage("Code:\n"+state["code"])]
-        structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method)
+        structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method, include_raw=True)
         msg = self.try_to_invoke(input,structured_llm, node_name)
         return msg
     
@@ -187,6 +182,7 @@ class ChainOfDebugAgent():
     def run_on_benchmark(self, folder, save_usage_metadata=True):
         projects = os.listdir(folder)
         classification_data = {'id':[], 'classification': []}
+        thinking_log = {'id':[], 'thinking':[]}
         #usage_metadata = []
         verified_prg = 0
         for proj in projects:
@@ -200,6 +196,7 @@ class ChainOfDebugAgent():
                     prog = f.read()
                     response = self.invoke(prog)
                     classification_data['classification'].append(response['classification'])
+                    thinking_log['thinking'].append(response['reasoning'])
                     print(f"{response['classification']}")
                     verified_prg+=1
 
@@ -211,8 +208,15 @@ class ChainOfDebugAgent():
                     time.sleep(10)
             
         classification_data['id'] = [i for i in range(verified_prg)]
+        thinking_log['id'] = [i for i in range(verified_prg)]
         
         res = self.try_into_dataframe(classification_data)
+        try:
+            with open("result_"+self.model+".json", "w") as f:
+                f.write(json.dumps(thinking_log, indent=4))
+        except Exception as e:
+            print(f"Cannot save thinking data: {e}")
+
         return res
     
     def try_into_dataframe(self, data):
