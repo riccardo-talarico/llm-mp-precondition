@@ -94,4 +94,4 @@ def get_universal_template(model_cls):
     return {field: "string" for field in model_cls.model_fields}
 
 if __name__ == '__main__':
-    print(GoPrimitive.model_json_schema())
+    print(TraceEvaluation.model_json_schema())

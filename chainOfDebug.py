@@ -76,10 +76,10 @@ class ChainOfDebugAgent():
     def _check_if_found_bug(self, state : State):
         """Guard node to check if the agent found a bug"""
         
-        if state["trace_eval"].reachable is False:
-            return "NO BUG"
-        elif state['early_stop']:
+        if state['early_stop']:
             return "STOP"
+        elif state["trace_eval"].reachable is False: 
+            return "NO BUG"
         else:
             return "FOUND"
     
