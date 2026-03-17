@@ -46,7 +46,7 @@ func (c *httpClusterClient) SetEndpoints() {
 }
 
 func (c *httpClusterClient) Do(ctx context.Context) {
-	c.RLock() // block here
+	c.RLock() 
 	c.RUnlock()
 }
 

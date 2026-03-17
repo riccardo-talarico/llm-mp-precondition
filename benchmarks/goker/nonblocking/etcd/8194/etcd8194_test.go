@@ -31,7 +31,7 @@ func (le *lessor) runLoop() {
 		ls = append(ls, &Lease{})
 
 		if len(ls) != 0 {
-			// rate limit
+			
 			if len(ls) > leaseRevokeRate/2 {
 				ls = ls[:leaseRevokeRate/2]
 			}

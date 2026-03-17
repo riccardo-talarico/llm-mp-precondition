@@ -24,7 +24,7 @@ func (c *Client) Close() {
 	c.cancel()
 	c.cancel = nil
 	c.mu.Unlock()
-	c.mu.Lock() // block here
+	c.mu.Lock() 
 }
 
 type remoteClient struct {
@@ -39,7 +39,7 @@ func (r *remoteClient) acquire(ctx context.Context) error {
 		r.mu.Lock()
 		r.mu.Unlock()
 		if closed {
-			return ErrConnClosed // Missing RUnlock before return
+			return ErrConnClosed 
 		}
 		r.client.mu.RUnlock()
 	}

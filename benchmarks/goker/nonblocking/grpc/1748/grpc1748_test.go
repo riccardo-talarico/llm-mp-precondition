@@ -8,7 +8,7 @@ import (
 
 var minConnectTimeout = 10 * time.Second
 
-var balanceMutex sync.Mutex // We add this for avoiding other data race
+var balanceMutex sync.Mutex 
 
 type Balancer interface {
 	HandleResolvedAddrs()
@@ -138,7 +138,7 @@ func TestGrpc1748(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		mctBkp := minConnectTimeout
-		// Call this only after transportMonitor goroutine has ended.
+		
 		defer func() {
 			minConnectTimeout = mctBkp
 		}()

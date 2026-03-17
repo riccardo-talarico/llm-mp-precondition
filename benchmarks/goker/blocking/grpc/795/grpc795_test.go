@@ -17,7 +17,7 @@ func (s *Server) GracefulStop() {
 		return
 	}
 	s.drain = true
-} // Missing Unlock
+} 
 
 func (s *Server) Serve() {
 	s.mu.Lock()

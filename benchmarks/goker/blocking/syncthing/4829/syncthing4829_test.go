@@ -14,7 +14,7 @@ type Mapping struct {
 }
 
 func (m *Mapping) clearAddresses() {
-	m.mut.Lock() // First locking
+	m.mut.Lock() 
 	var removed []Address
 	for id, addr := range m.extAddresses {
 		removed = append(removed, addr)
@@ -27,7 +27,7 @@ func (m *Mapping) clearAddresses() {
 }
 
 func (m *Mapping) notify(added, remove []Address) {
-	m.mut.RLock() // Second locking
+	m.mut.RLock() 
 	m.mut.RUnlock()
 }
 

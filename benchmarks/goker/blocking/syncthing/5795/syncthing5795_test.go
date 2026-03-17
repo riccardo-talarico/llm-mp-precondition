@@ -84,7 +84,7 @@ func (c *rawConnection) internalClose() {
 }
 
 func (c *rawConnection) Close() {
-	c.internalClose() // FIX: go c.internalClose()
+	c.internalClose() 
 }
 
 func NewConnection(receiver Model) Connection {

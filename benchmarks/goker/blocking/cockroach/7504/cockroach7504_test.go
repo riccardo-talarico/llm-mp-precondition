@@ -1,12 +1,4 @@
-/*
- * Project: cockroach
- * Issue or PR  : https://github.com/cockroachdb/cockroach/pull/7504
- * Buggy version: bc963b438cdc3e0ad058a5282358e5aee0595e17
- * fix commit-id: cab761b9f5ee5dee1448bc5d6b1d9f5a0ff0bad5
- * Flaky: 1/100
- * Description: There are locking leaseState, tableNameCache in Release(), but
- * tableNameCache,LeaseState in AcquireByName.  It is AB and BA deadlock.
- */
+
 package cockroach7504
 
 import (
@@ -21,7 +13,7 @@ func MakeCacheKey(lease *LeaseState) int {
 }
 
 type LeaseState struct {
-	mu sync.Mutex // LockA
+	mu sync.Mutex 
 	id int
 }
 type LeaseSet struct {
@@ -55,23 +47,23 @@ func (t *tableState) release(lease *LeaseState) {
 	defer t.mu.Unlock()
 
 	s := t.active.find(MakeCacheKey(lease))
-	s.mu.Lock()         // LockA acquire
-	defer s.mu.Unlock() // LockA release
+	s.mu.Lock()         
+	defer s.mu.Unlock() 
 
 	t.removeLease(s)
 }
 func (t *tableState) removeLease(lease *LeaseState) {
 	t.active.remove(lease)
-	t.tableNameCache.remove(lease) // LockA acquire/release
+	t.tableNameCache.remove(lease) 
 }
 
 type tableNameCache struct {
-	mu     sync.Mutex // LockB
+	mu     sync.Mutex 
 	tables map[int]*LeaseState
 }
 
 func (c *tableNameCache) get(id int) {
-	c.mu.Lock() // LockA acquire
+	c.mu.Lock() 
 	defer c.mu.Unlock()
 	lease, ok := c.tables[id]
 	if !ok {
@@ -80,15 +72,15 @@ func (c *tableNameCache) get(id int) {
 	if lease == nil {
 		panic("nil lease in name cache")
 	}
-	//+time.Sleep(time.Second)
-	lease.mu.Lock() // LockB acquire
+	
+	lease.mu.Lock() 
 	defer lease.mu.Unlock()
-	// LockB release
-	// LockA release
+	
+	
 }
 
 func (c *tableNameCache) remove(lease *LeaseState) {
-	c.mu.Lock() // LockA acquire
+	c.mu.Lock() 
 	defer c.mu.Unlock()
 	key := MakeCacheKey(lease)
 	existing, ok := c.tables[key]
@@ -98,7 +90,7 @@ func (c *tableNameCache) remove(lease *LeaseState) {
 	if existing == lease {
 		delete(c.tables, key)
 	}
-	// LockA release
+	
 }
 
 type LeaseManager struct {
@@ -161,16 +153,16 @@ func TestCockroach7504(t *testing.T) {
 	var wg sync.WaitGroup
 	
 	wg.Add(2)
-	// G1
+	
 	go func() {
-		// lock AB
+		
 		mgr.AcquireByName(0)
 		wg.Done()
 	}()
 
-	// G2
+	
 	go func() {
-		// lock BA
+		
 		mgr.Release(lset.find(0))
 		wg.Done()
 	}()

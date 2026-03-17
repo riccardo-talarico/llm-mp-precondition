@@ -76,5 +76,5 @@ func TestKubernetes70277(t *testing.T) {
 		return true, nil
 	}, stopCh)
 
-	<-doneCh // block here
+	<-doneCh 
 }

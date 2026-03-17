@@ -1,14 +1,4 @@
-/*
- * Project: grpc-go
- * Issue or PR   : https://github.com/grpc/grpc-go/pull/862
- * Buggy version: d8f4ebe77f6b7b6403d7f98626de8a534f9b93a7
- * fix commit-id: dd5645bebff44f6b88780bb949022a09eadd7dae
- * Flaky: 100/100
- * Description:
- *   When return value conn is nil, cc (ClientConn) is not closed.
- * The goroutine executing resetAddrConn is leaked. The patch is to
- * close ClientConn in the defer func().
- */
+
 package grpc862
 
 import (
@@ -54,7 +44,7 @@ func (ac *addrConn) resetTransport() {
 		_, cancel := context.WithTimeout(ac.ctx, timeout)
 		connectTime := time.Now()
 		cancel()
-		select { // Block here
+		select { 
 		case <-time.After(sleepTime - time.Since(connectTime)):
 		case <-ac.ctx.Done():
 			return
@@ -78,24 +68,24 @@ func DialContext(ctx context.Context) (conn *ClientConn) {
 			conn = nil
 		default:
 		}
-		/// FIX: cc.Close()
+		
 	}()
-	go func() { // G2
+	go func() { 
 		cc.resetAddrConn()
 	}()
 	return conn
 }
 
-///
-/// G1 					G2
-/// DialContext()
-/// 					cc.resetAddrConn()
-/// 					resetTransport()
-/// 					<-ac.ctx.Done()
-/// --------------G2 leak------------------
-///
+
+
+
+
+
+
+
+
 func TestGrpc862(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	go DialContext(ctx) // G1
-	go cancel()         // helper goroutine
+	go DialContext(ctx) 
+	go cancel()         
 }

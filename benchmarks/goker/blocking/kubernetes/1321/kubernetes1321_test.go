@@ -1,21 +1,4 @@
-/*
- * Project: kubernetes
- * Issue or PR  : https://github.com/kubernetes/kubernetes/pull/1321
- * Buggy version: 9cd0fc70f1ca852c903b18b0933991036b3b2fa1
- * fix commit-id: 435e0b73bb99862f9dedf56a50260ff3dfef14ff
- * Flaky: 1/100
- * Description:
- *   This is a lock-channel bug. The first goroutine invokes
- * distribute() function. distribute() function holds m.lock.Lock(),
- * while blocking at sending message to w.result. The second goroutine
- * invokes stopWatching() funciton, which can unblock the first
- * goroutine by closing w.result. However, in order to close w.result,
- * stopWatching() function needs to acquire m.lock.Lock() firstly.
- *   The fix is to introduce another channel and put receive message
- * from the second channel in the same select as the w.result. Close
- * the second channel can unblock the first goroutine, while no need
- * to hold m.lock.Lock().
- */
+
 package kubernetes1321
 
 import (
@@ -44,7 +27,7 @@ func NewMux() *Mux {
 	m := &Mux{
 		watchers: map[int64]*muxWatcher{},
 	}
-	go m.loop() // G2
+	go m.loop() 
 	return m
 }
 
@@ -71,7 +54,7 @@ func (m *Mux) distribute() {
 	defer m.lock.Unlock()
 	globalMtx.Lock()
 	for _, w := range m.watchers {
-		w.result <- struct{}{} // blocked here
+		w.result <- struct{}{} 
 	}
 	globalMtx.Unlock()
 }
@@ -93,20 +76,20 @@ func testMuxWatcherClose() {
 	w.Stop()
 }
 
-///
-/// G1 							G2
-/// testMuxWatcherClose()
-/// NewMux()
-/// 							m.loop()
-/// 							m.distribute()
-/// 							m.lock.Lock()
-/// 							w.result <- true
-/// w := m.Watch()
-/// w.Stop()
-/// mw.m.stopWatching()
-/// m.lock.Lock()
-/// ---------------G1,G2 deadlock---------------
-///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 func TestKubernetes1321(t *testing.T) {
-	go testMuxWatcherClose() // G1
+	go testMuxWatcherClose() 
 }

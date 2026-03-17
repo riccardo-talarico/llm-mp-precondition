@@ -1,13 +1,4 @@
-/*
- * Project: cockroach
- * Issue or PR  : https://github.com/cockroachdb/cockroach/pull/3710
- * Buggy version: 4afdd4860fd7c3bd9e92489f84a95e5cc7d11a0d
- * fix commit-id: cb65190f9caaf464723e7d072b1f1b69a044ef7b
- * Flaky: 2/100
- * Description: This deadlock is casued by acquiring a RLock twice in a call chain.
- * ForceRaftLogScanAndProcess(acquire s.mu.RLock()) ->MaybeAdd()->shouldQueue()->
- * getTruncatableIndexes()->RaftStatus(acquire s.mu.Rlock())
- */
+
 
 package cockroach3710
 
@@ -97,19 +88,19 @@ func NewStore() *Store {
 	return store
 }
 
-/// G1 										G2
-/// store.ForceRaftLogScanAndProcess()
-/// s.mu.RLock()
-/// s.raftLogQueue.MaybeAdd()
-/// bq.impl.shouldQueue()
-/// getTruncatableIndexes()
-/// r.store.RaftStatus()
-/// 										store.processRaft()
-/// 										s.mu.Lock()
-/// s.mu.RLock()
-/// ----------------------G1,G2 deadlock---------------------
+
+
+
+
+
+
+
+
+
+
+
 func TestCockroach3710(t *testing.T) {
 	store := NewStore()
-	go store.ForceRaftLogScanAndProcess() // G1
-	go store.processRaft()                // G2
+	go store.ForceRaftLogScanAndProcess() 
+	go store.processRaft()                
 }

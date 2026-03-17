@@ -14,7 +14,7 @@ func (g *Gossip) bootstrap() {
 	for {
 		g.mu.Lock()
 		if g.closed {
-			/// Missing g.mu.Unlock
+			
 			break
 		}
 		g.mu.Unlock()
@@ -26,7 +26,7 @@ func (g *Gossip) manage() {
 	for {
 		g.mu.Lock()
 		if g.closed {
-			/// Missing g.mu.Unlock
+			
 			break
 		}
 		g.mu.Unlock()

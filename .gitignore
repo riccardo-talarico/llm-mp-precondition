@@ -1,6 +1,6 @@
 *.env
 __pycache__
 *.log
-benchmark_results*
+results
 gomela
 *.png

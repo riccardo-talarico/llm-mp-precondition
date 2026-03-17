@@ -32,7 +32,7 @@ func (p *processorListener) pop(stopCh <-chan struct{}) {
 			}
 			p.cond.Wait()
 		}
-		select { // block here
+		select { 
 		case <-stopCh:
 			return
 		}
@@ -55,7 +55,7 @@ func TestKubernetes26980(t *testing.T) {
 
 	resultCh := make(chan struct{})
 	go func() {
-		pl.lock.Lock() // block here
+		pl.lock.Lock() 
 		close(resultCh)
 	}()
 	<-resultCh

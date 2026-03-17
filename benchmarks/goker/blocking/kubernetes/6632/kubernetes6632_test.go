@@ -1,15 +1,4 @@
-/*
- * Project: kubernetes
- * Issue or PR  : https://github.com/kubernetes/kubernetes/pull/6632
- * Buggy version: e597b41d939573502c8dda1dde7bf3439325fb5d
- * fix commit-id: 82afb7ab1fe12cf2efceede2322d082eaf5d5adc
- * Flaky: 4/100
- * Description:
- *   This is a lock-channel bug. When resetChan is full, WriteFrame
- * holds the lock and blocks on the channel. Then monitor() fails
- * to close the resetChan because lock is already held by WriteFrame.
- *   Fix: create a goroutine to drain the channel
- */
+
 package kubernetes6632
 
 import (
@@ -60,23 +49,23 @@ func NewIdleAwareFramer() *idleAwareFramer {
 	}
 }
 
-///
-/// G1						G2					helper goroutine
-/// i.monitor()
-/// <-i.conn.closeChan
-///							i.WriteFrame()
-///							i.writeLock.Lock()
-///							i.resetChan <-
-///												i.conn.closeChan<-
-///	i.writeLock.Lock()
-///	----------------------G1,G2 deadlock------------------------
-///
+
+
+
+
+
+
+
+
+
+
+
 func TestKubernetes6632(t *testing.T) {
 	i := NewIdleAwareFramer()
 
-	go func() { // helper goroutine
+	go func() { 
 		i.conn.closeChan <- true
 	}()
-	go i.monitor()    // G1
-	go i.WriteFrame() // G2
+	go i.monitor()    
+	go i.WriteFrame() 
 }

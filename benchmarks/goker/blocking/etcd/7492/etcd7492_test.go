@@ -1,10 +1,4 @@
-/*
- * Project: etcd
- * Issue or PR  : https://github.com/etcd-io/etcd/pull/7492
- * Buggy version: 51939650057d602bb5ab090633138fffe36854dc
- * fix commit-id: 1b1fabef8ffec606909f01c3983300fff539f214
- * Flaky: 40/100
- */
+
 package etcd7492
 
 import (
@@ -41,7 +35,7 @@ func NewSimpleTokenTTLKeeper(deletefunc func(string)) *simpleTokenTTLKeeper {
 		stopCh:           make(chan chan struct{}),
 		deleteTokenFunc:  deletefunc,
 	}
-	go stk.run() // G1
+	go stk.run() 
 	return stk
 }
 
@@ -51,7 +45,7 @@ func (tm *simpleTokenTTLKeeper) run() {
 	for {
 		select {
 		case <-tm.addSimpleTokenCh:
-			/// Make tm.tokens not empty is enough
+			
 			tm.tokens["1"] = time.Now()
 		case <-tokenTicker.C:
 			for t, _ := range tm.tokens {
@@ -125,31 +119,31 @@ func setupAuthStore() (store *authStore, teardownfunc func()) {
 	return as, tearDown
 }
 
-///
-///	G1										G2
-///											stk.run()
-///	ts.assignSimpleTokenToUser()
-///	t.simpleTokensMu.Lock()
-///	t.simpleTokenKeeper.addSimpleToken()
-///	tm.addSimpleTokenCh <- true
-///											<-tm.addSimpleTokenCh
-///	t.simpleTokensMu.Unlock()
-///	ts.assignSimpleTokenToUser()
-///	...										...
-///	t.simpleTokensMu.Lock()
-///											<-tokenTicker.C
-///	tm.addSimpleTokenCh <- true
-///											tm.deleteTokenFunc()
-///											t.simpleTokensMu.Lock()
-///------------------------------------G1,G2 deadlock---------------------------------------------
-///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 func TestEtcd7492(t *testing.T) {
 	as, tearDown := setupAuthStore()
 	defer tearDown()
 	var wg sync.WaitGroup
 	wg.Add(3)
 	for i := 0; i < 3; i++ {
-		go func() { // G2
+		go func() { 
 			defer wg.Done()
 			as.Authenticate()
 		}()

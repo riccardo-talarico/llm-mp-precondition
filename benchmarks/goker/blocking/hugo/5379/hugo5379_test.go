@@ -63,7 +63,7 @@ func (p *Page) initContentPlainAndMeta() {
 func (p *Page) initPlain(lock bool) {
 	p.plainInit.Do(func() {
 		if lock {
-			p.contentInitMu.Lock() /// Double locking here.
+			p.contentInitMu.Lock() 
 			defer p.contentInitMu.Unlock()
 		}
 	})
@@ -96,7 +96,7 @@ func (p *Page) initContent() {
 
 		go func() {
 			var err error
-			p.contentInitMu.Lock() // first lock here
+			p.contentInitMu.Lock() 
 			defer p.contentInitMu.Unlock()
 
 			err = p.prepareForRender()
@@ -161,7 +161,7 @@ func (s *Site) preparePagesForRender() {
 }
 
 func (s *Site) renderForLayouts() {
-	/// Omit reflections
+	
 	for _, p := range s.Pages {
 		p.WordCount()
 	}
@@ -254,7 +254,7 @@ func renderShortcode(p *PageWithoutContent) error {
 }
 
 func renderShortcodeWithPage(p *PageWithoutContent) error {
-	/// Omit reflections
+	
 	p.WordCount()
 	return nil
 }

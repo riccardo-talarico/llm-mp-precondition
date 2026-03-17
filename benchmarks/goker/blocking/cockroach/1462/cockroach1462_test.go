@@ -68,7 +68,7 @@ func (s *Stopper) Quiesce() {
 	defer s.mu.Unlock()
 	s.draining = true
 	for s.numTasks > 0 {
-		// Unlock s.mu, wait for the signal, and lock s.mu.
+		
 		s.drain.Wait()
 	}
 }

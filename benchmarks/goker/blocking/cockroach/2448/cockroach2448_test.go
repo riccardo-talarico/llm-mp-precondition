@@ -22,12 +22,12 @@ type MultiRaft struct {
 	callbackChan chan func()
 }
 
-// sendEvent can be invoked many times
+
 func (m *MultiRaft) sendEvent(event interface{}) {
-	/// FIX:
-	/// Let event append a event queue instead of pending here
+	
+	
 	select {
-	case m.Events <- event: // Waiting for events consumption
+	case m.Events <- event: 
 	case <-m.stopper.ShouldStop():
 	}
 }
@@ -56,7 +56,7 @@ func (s *state) processCommittedEntry() {
 	s.sendEvent(&EventMembershipChangeCommitted{
 		Callback: func() {
 			select {
-			case s.callbackChan <- func() { // Waiting for callbackChan consumption
+			case s.callbackChan <- func() { 
 				time.Sleep(time.Nanosecond)
 			}:
 			case <-s.stopper.ShouldStop():
@@ -78,7 +78,7 @@ func (s *Store) processRaft() {
 			case *EventMembershipChangeCommitted:
 				callback = e.Callback
 				if callback != nil {
-					callback() // Waiting for callbackChan consumption
+					callback() 
 				}
 			}
 		case <-s.multiraft.stopper.ShouldStop():
@@ -103,6 +103,6 @@ func NewStoreAndState() (*Store, *state) {
 
 func TestCockroach2448(t *testing.T) {
 	s, st := NewStoreAndState()
-	go s.processRaft() // G1
-	go st.start()      // G2
+	go s.processRaft() 
+	go st.start()      
 }

@@ -1,10 +1,4 @@
-/*
- * Project: moby
- * Issue or PR  : https://github.com/moby/moby/pull/27782
- * Buggy version: 18768fdc2e76ec6c600c8ab57d2d487ee7877794
- * fix commit-id: a69a59ffc7e3d028a72d1195c2c1535f447eaa84
- * Flaky: 2/100
- */
+
 package moby27782
 
 import (
@@ -55,7 +49,7 @@ func NewWatcher() *Watcher {
 		done:   make(chan struct{}),
 	}
 	w.cv = sync.NewCond(&w.mu)
-	go w.readEvents() // G3
+	go w.readEvents() 
 	return w
 }
 
@@ -65,7 +59,7 @@ func (w *Watcher) readEvents() {
 		if w.isClosed() {
 			return
 		}
-		event := newEvent(Write) // MODIFY event
+		event := newEvent(Write) 
 		if !event.ignoreLinux(w) {
 			time.Sleep(300 * time.Nanosecond)
 			select {
@@ -217,33 +211,33 @@ func (l *JSONFileLogger) Close() {
 	}
 }
 
-///
-/// G1 						G2							G3
-/// InitializeStdio()
-/// startLogging()
-/// l.ReadLogs()
-/// NewLogWatcher()
-/// 						l.readLogs()
-/// container.Reset()
-/// LogDriver.Close()
-/// r.Close()
-/// close(w.closeNotifier)
-/// 						followLogs(logWatcher)
-/// 						watchFile()
-/// 						New()
-/// 						NewEventWatcher()
-/// 						NewWatcher()
-/// 													w.readEvents()
-/// 													event.ignoreLinux()
-/// 													return false
-/// 						<-logWatcher.WatchClose()
-/// 						fileWatcher.Remove()
-/// 						w.cv.Wait()
-/// 													w.Events <- event
-/// ------------------------------G2,G3 deadlock---------------------------
-///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func TestMoby27782(t *testing.T) {
 	c := &Container{}
-	go c.InitializeStdio() // G1
+	go c.InitializeStdio() 
 }

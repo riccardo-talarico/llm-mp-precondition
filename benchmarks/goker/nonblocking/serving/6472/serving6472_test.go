@@ -97,11 +97,7 @@ func (m *Prober) IsReady() {
 		ingressState: ingressState,
 	})
 	for _, ipWorkItems := range workItems {
-		/*
-			go func() {
-				m.updateStates(ingressState)
-			}()
-		*/
+		
 		for _, wi := range ipWorkItems {
 			m.workQueue.Add(wi)
 		}

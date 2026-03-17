@@ -62,7 +62,7 @@ func (ccc *lbCacheClientConn) RemoveSubConn(sc SubConn) {
 	timer := time.AfterFunc(ccc.timeout, func() {
 		ccc.mu.Lock()
 		if entry.abortDeleting {
-			return // Missing unlock
+			return 
 		}
 		delete(ccc.subConnToAddr, sc)
 		delete(ccc.subConnCache, addr)

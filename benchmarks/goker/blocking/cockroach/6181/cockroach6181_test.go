@@ -1,10 +1,4 @@
-/*
- * Project: cockroach
- * Issue or PR  : https://github.com/cockroachdb/cockroach/pull/6181
- * Buggy version: c0a232b5521565904b851699853bdbd0c670cf1e
- * fix commit-id: d5814e4886a776bf7789b3c51b31f5206480d184
- * Flaky: 57/100
- */
+
 package cockroach6181
 
 import (
@@ -53,7 +47,7 @@ func testRangeCacheCoalescedRquests() {
 		var wg sync.WaitGroup
 		for i := 0; i < 3; i++ {
 			wg.Add(1)
-			go func() { // G2,G3,...
+			go func() { 
 				doLookupWithToken(db.cache)
 				wg.Done()
 			}()
@@ -63,24 +57,24 @@ func testRangeCacheCoalescedRquests() {
 	pauseLookupResumeAndAssert()
 }
 
-/// G1 									G2							G3					...
-/// testRangeCacheCoalescedRquests()
-/// initTestDescriptorDB()
-/// pauseLookupResumeAndAssert()
-/// return
-/// 									doLookupWithToken()
-///																 	doLookupWithToken()
-///										rc.LookupRangeDescriptor()
-///																	rc.LookupRangeDescriptor()
-///										rdc.rangeCacheMu.RLock()
-///										rdc.String()
-///																	rdc.rangeCacheMu.RLock()
-///																	fmt.Printf()
-///																	rdc.rangeCacheMu.RUnlock()
-///																	rdc.rangeCacheMu.Lock()
-///										rdc.rangeCacheMu.RLock()
-/// -------------------------------------G2,G3,... deadlock--------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func TestCockroach6181(t *testing.T) {
-	go testRangeCacheCoalescedRquests() // G1
+	go testRangeCacheCoalescedRquests() 
 }

@@ -16,7 +16,7 @@ type lessor struct {
 }
 
 func (le *lessor) Checkpoint() {
-	le.mu.Lock() // block here
+	le.mu.Lock() 
 	defer le.mu.Unlock()
 }
 

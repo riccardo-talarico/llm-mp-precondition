@@ -1,10 +1,4 @@
-/*
- * Project: etcd
- * Issue or PR  : https://github.com/etcd-io/etcd/pull/6857
- * Buggy version: 7c8f13aed7fe251e7066ed6fc1a090699c2cae0e
- * fix commit-id: 7afc490c95789c408fbc256d8e790273d331c984
- * Flaky: 19/100
- */
+
 package etcd6857
 
 import (
@@ -54,24 +48,24 @@ func NewNode() *node {
 	}
 }
 
-///
-/// G1				G2				G3
-/// n.run()
-///									n.Stop()
-///									n.stop<-
-/// <-n.stop
-///									<-n.done
-/// close(n.done)
-///	return
-///									return
-///					n.Status()
-///					n.status<-
-///----------------G2 leak-------------------
-///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func TestEtcd6857(t *testing.T) {
 	n := NewNode()
-	go n.run()    // G1
-	go n.Status() // G2
-	go n.Stop()   // G3
+	go n.run()    
+	go n.Status() 
+	go n.Stop()   
 }

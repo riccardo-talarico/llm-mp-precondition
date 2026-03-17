@@ -1,18 +1,4 @@
-/*
- * Project: moby
- * Issue or PR  : https://github.com/moby/moby/pull/21233
- * Buggy version: cc12d2bfaae135e63b1f962ad80e6943dd995337
- * fix commit-id: 2f4aa9658408ac72a598363c6e22eadf93dbb8a7
- * Flaky:100/100
- * Description:
- *   This test was checking that it received every progress update that was
- *  produced. But delivery of these intermediate progress updates is not
- *  guaranteed. A new update can overwrite the previous one if the previous
- *  one hasn't been sent to the channel yet.
- *    The call to t.Fatalf exited the cur rent goroutine which was consuming
- *  the channel, which caused a deadlock and eventual test timeout rather
- *  than a proper failure message.
- */
+
 package moby21233
 
 import (
@@ -72,7 +58,7 @@ func (t *Transfer) Watch(progressOutput Output) *Watcher {
 		signalChan:  make(chan struct{}),
 		running:     make(chan struct{}),
 	}
-	go func() { // G2
+	go func() { 
 		defer func() {
 			close(w.running)
 		}()
@@ -109,8 +95,8 @@ func testTransfer() {
 	tm := NewTransferManager()
 	progressChan := make(chan Progress)
 	progressDone := make(chan struct{})
-	go func() { // G3
-		for p := range progressChan { /// Chan consumer
+	go func() { 
+		for p := range progressChan { 
 			if rand.Int31n(2) >= 1 {
 				return
 			}
@@ -122,32 +108,32 @@ func testTransfer() {
 	xrefs := make([]*Transfer, len(ids))
 	watchers := make([]*Watcher, len(ids))
 	for i := range ids {
-		xrefs[i], watchers[i] = tm.Transfer(ChanOutput(progressChan)) /// Chan producer
+		xrefs[i], watchers[i] = tm.Transfer(ChanOutput(progressChan)) 
 	}
 
 	for i := range xrefs {
-		xrefs[i].Release(watchers[i]) /// Block here
+		xrefs[i].Release(watchers[i]) 
 	}
 
 	close(progressChan)
 	<-progressDone
 }
 
-///
-/// G1 						G2					G3
-/// testTransfer()
-/// tm.Transfer()
-/// t.Watch()
-/// 						WriteProgress()
-/// 						ProgressChan<-
-/// 											<-progressChan
-/// 						...					...
-/// 						return
-/// 											<-progressChan
-/// <-watcher.running
-/// ----------------------G1, G3 leak--------------------------
-///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 func TestMoby21233(t *testing.T) {
-	go testTransfer() // G1
+	go testTransfer() 
 }

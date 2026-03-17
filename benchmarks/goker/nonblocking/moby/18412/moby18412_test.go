@@ -25,14 +25,14 @@ func RunCommandWithOutputForDuration(cmd *exec.Cmd, duration time.Duration) (out
 
 	done := make(chan error)
 
-	// Start the command in the main thread..
+	
 	err = cmd.Start()
 	if err != nil {
 		err = fmt.Errorf("Fail to start command %v : %v", cmd, err)
 	}
 
 	go func() {
-		// And wait for it to exit in the goroutine :)
+		
 		exitErr := cmd.Wait()
 		exitCode = 1
 		done <- exitErr

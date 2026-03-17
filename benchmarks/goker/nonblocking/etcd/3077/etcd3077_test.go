@@ -35,7 +35,7 @@ type EtcdServer struct {
 
 func (s *EtcdServer) run() {
 	go s.r.run()
-	// Wait s.r.run
+	
 	time.Sleep(10 * time.Millisecond)
 	defer func() {
 		s.r.stopped <- struct{}{}

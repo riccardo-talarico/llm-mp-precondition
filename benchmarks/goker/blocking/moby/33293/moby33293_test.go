@@ -1,10 +1,4 @@
-/*
- * Project: moby
- * Issue or PR  : https://github.com/moby/moby/pull/33293
- * Buggy version: 4921171587c09d0fcd8086a62a25813332f44112
- * fix commit-id:
- * Flaky: 100/100
- */
+
 package moby33293
 
 import (
@@ -23,21 +17,21 @@ func containerWait() <-chan error {
 	errC := make(chan error)
 	err := MayReturnError()
 	if err != nil {
-		errC <- err /// Block here
+		errC <- err 
 		return errC
 	}
 	return errC
 }
 
-///
-/// G1
-/// containerWait()
-/// errC <- err
-/// ---------G1 leak---------------
-///
+
+
+
+
+
+
 
 func TestMoby33293(t *testing.T) {
-	go func() { // G1
+	go func() { 
 		err := containerWait()
 		if err != nil {
 			return

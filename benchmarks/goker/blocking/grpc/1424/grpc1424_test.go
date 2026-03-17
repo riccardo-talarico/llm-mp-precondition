@@ -1,12 +1,4 @@
-/*
- * Project: grpc-go
- * Issue or PR  : https://github.com/grpc/grpc-go/pull/1424
- * Buggy version: 39c8c3866d926d95e11c03508bf83d00f2963f91
- * fix commit-id: 64bd0b04a7bb1982078bae6a2ab34c226125fbc1
- * Flaky: 100/100
- * Description:
- *   The parent function could return without draining the done channel.
- */
+
 package grpc1424
 
 import (
@@ -48,10 +40,10 @@ type ClientConn struct {
 func (cc *ClientConn) lbWatcher(doneChan chan bool) {
 	for addr := range cc.dopts.balancer.Notify() {
 		if addr {
-			// nop, make compiler happy
+			
 		}
 		var (
-			/// add []Address is empty
+			
 			del []*addrConn
 		)
 		for _, a := range cc.conns {
@@ -60,8 +52,8 @@ func (cc *ClientConn) lbWatcher(doneChan chan bool) {
 		for _, c := range del {
 			c.tearDown()
 		}
-		/// Without close doneChan
-		/// FIX: defer close(doneChan)
+		
+		
 	}
 }
 
@@ -77,29 +69,29 @@ func NewClientConn() *ClientConn {
 func DialContext() {
 	cc := NewClientConn()
 	waitC := make(chan error, 1)
-	go func() { // G2
+	go func() { 
 		defer close(waitC)
 		ch := cc.dopts.balancer.Notify()
 		if ch != nil {
 			doneChan := make(chan bool)
-			go cc.lbWatcher(doneChan) // G3
-			<-doneChan                /// Block here
+			go cc.lbWatcher(doneChan) 
+			<-doneChan                
 		}
 	}()
-	/// close addrCh
+	
 	close(cc.dopts.balancer.(*roundRobin).addrCh)
 }
 
-///
-/// G1                      G2                          G3
-/// DialContext()
-///                         cc.dopts.balancer.Notify()
-///                                                     cc.lbWatcher()
-///                         <-doneChan
-/// close()
-/// -----------------------G2 leak------------------------------------
-///
+
+
+
+
+
+
+
+
+
 
 func TestGrpc1424(t *testing.T) {
-	go DialContext() // G1
+	go DialContext() 
 }
