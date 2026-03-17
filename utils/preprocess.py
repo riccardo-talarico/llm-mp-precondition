@@ -74,8 +74,7 @@ def process_results_csv(model_name : str = 'qwen/qwen3-32b'):
 
 def collect_instances(root_dir):
     
-    instances = []
-
+    instances = {'blocking':[],'nonblocking':[]}
     for class_name in ["blocking", "nonblocking"]:
         class_path = os.path.join(root_dir, class_name)
         if not os.path.isdir(class_path):
@@ -96,12 +95,12 @@ def collect_instances(root_dir):
                 file_path = os.path.join(case_path, expected_file)
 
                 if os.path.isfile(file_path):
-                    instances.append(file_path)
+                    instances[class_name].append(file_path)
                 else:
                     # fallback: pick any *_test.go file in the folder
                     for f in os.listdir(case_path):
                         if f.endswith("_test.go"):
-                            instances.append(os.path.join(case_path, f))
+                            instances[class_name].append(os.path.join(case_path, f))
                             break
 
     return instances
@@ -112,13 +111,26 @@ def create_validation_test(root_dir : str, val_size : int, test_file :str, val_f
 
     instances = collect_instances(root_dir)
 
-    if len(instances) < val_size:
-        raise ValueError("Dataset smaller than validation size.")
+    count = {}
+    count['blocking'] = len(instances['blocking'])
+    count['nonblocking'] = len(instances['nonblocking'])
+    total_count = count['blocking'] + count['nonblocking']
+    print(f"Counts: blocking = {count['blocking']}, nonblocking={count['nonblocking']}")
 
+    ratio = {}
+    ratio['blocking'] = count['blocking'] / total_count
+    ratio['nonblocking'] = count['nonblocking'] / total_count
+
+    print(f"Ratios: blocking = {ratio['blocking']}, nonblocking={ratio['nonblocking']}")
+    val_set,test_set = [],[]
     # Shuffle and split
-    random.shuffle(instances)
-    val_set = instances[:val_size]
-    test_set = instances[val_size:]
+    for class_name in ['blocking', 'nonblocking']:
+        random.shuffle(instances[class_name])
+        val_set += instances[class_name][:round(ratio[class_name]*val_size)]
+        test_set += instances[class_name][round(ratio[class_name]*val_size):]
+    
+    random.shuffle(val_set)
+    random.shuffle(test_set)
 
     with open(val_file, "w") as f:
         for item in val_set:
@@ -128,13 +140,13 @@ def create_validation_test(root_dir : str, val_size : int, test_file :str, val_f
         for item in test_set:
             f.write(item + "\n")
 
-    print(f"Total instances: {len(instances)}")
+    print(f"Total instances: {total_count}")
     print(f"Validation set: {len(val_set)}")
     print(f"Test set: {len(test_set)}")
 
 
 if __name__ == '__main__':
-    remove_comments_from_all_benchmark("benchmarks/goker")
+    #remove_comments_from_all_benchmark("benchmarks/goker")
     create_validation_test(
         root_dir="benchmarks/goker", 
         val_size=20, 
