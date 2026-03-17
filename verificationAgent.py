@@ -19,7 +19,7 @@ import pandas as pd
 
 class VerificationAgent():
 
-  def __init__(self, benchmark_folder,provider='Google',model="gemini-2.5-flash", propose_fix=False, logging = True):
+  def __init__(self, validation_paths: str, test_paths : str,provider='Google',model="gemini-2.5-flash", propose_fix=False, logging = True):
     if provider == 'Google':
       api_key = os.getenv("GEMINI_API_KEY")
       self.llm = ChatGoogleGenerativeAI(model=model,google_api_key=api_key, max_retries = 3)
@@ -29,7 +29,8 @@ class VerificationAgent():
     else:
       print("Other providers not currently supported")
       self.llm = None  
-    self.folder = benchmark_folder
+    self.validation_paths = validation_paths
+    self.test_paths = test_paths
     self.logging = logging
     self.model = model
     self.usage_metadata = []
@@ -61,8 +62,11 @@ class VerificationAgent():
     
     self.agent = self.llm.with_structured_output(self.response_schema, method="json_mode", include_raw=True)
       
-  def run_on_benchmark(self, save_usage_metadata=True):
-    projects = os.listdir(self.folder)
+  def run_on_benchmark(self, validation : bool = False, save_usage_metadata : bool=True):
+    
+    path = self.validation_paths if validation else self.test_paths
+    with open(path,'r') as f:
+      prg_paths = f.readlines()
 
     sysMsg = SystemMessage(content='Role: You are a Go Concurrency Expert and Program Verifier. Your task is to analyze Go code snippets to identify and classify blocking bugs according to the following hierarchy.'+\
 'Bug Classification Hierarchy: If a blocking bug is detected, classify it into exactly one subtype and subsubtype based on these definitions:'+
@@ -87,36 +91,31 @@ class VerificationAgent():
     classification_data = {'id':[], 'classification': []}
     usage_metadata = []
     verified_prg = 0
-    for proj in projects:
-      proj_folder = os.path.join(self.folder,proj)
-      for fragment in os.listdir(proj_folder):
-        frag_path = os.path.join(proj_folder, fragment)
-        frag_path = os.path.join(frag_path, proj+fragment+"_test.go")
+    for prg_path in prg_paths:
+      with open(prg_path[:-1], "r") as f:
+        print(f"File: {prg_path[:-1]}")
+        prog = f.read()
+        messages = [sysMsg, HumanMessage(content=prog)]
+        default_response = {
+          'categorization': {'subsubtype': 'Skipped', 'subtype': 'Skipped'},
+        }
+        response = self.try_to_invoke(messages, default_response)
+        print(f"{response['parsed']}")
+        try:
+          reasoning = response['raw'].additional_kwargs.get("reasoning_content")
+          print(f"Reasoning:{reasoning}")
+        except Exception as e:
+          print(f"Cannot extract reasoning tokens: {e}")
 
-        with open(frag_path, "r") as f:
-          print(f"File: {frag_path}")
-          prog = f.read()
-          messages = [sysMsg, HumanMessage(content=prog)]
-          default_response = {
-            'categorization': {'subsubtype': 'Skipped', 'subtype': 'Skipped'},
-          }
-          response = self.try_to_invoke(messages, default_response)
-          print(f"{response['parsed']}")
-          try:
-            reasoning = response['raw'].additional_kwargs.get("reasoning_content")
-            print(f"Reasoning:{reasoning}")
-          except Exception as e:
-            print(f"Cannot extract reasoning tokens: {e}")
+        classification_data['classification'].append(response['parsed'])
+        verified_prg+=1
+        
+        if save_usage_metadata:
+          self.get_usage_metadata(response, verified_prg-1)
 
-          classification_data['classification'].append(response['parsed'])
-          verified_prg+=1
-          
-          if save_usage_metadata:
-            self.get_usage_metadata(response, verified_prg-1)
-
-          print(f"Progress: {verified_prg}/68")
-          print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
-          time.sleep(15)
+        print(f"Progress: {verified_prg}/68")
+        print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
+        time.sleep(15)
           
     classification_data['id'] = [i for i in range(verified_prg)]
     
@@ -164,7 +163,12 @@ class VerificationAgent():
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-maverick-17b-128e-instruct,
 # moonshotai/kimi-k2-instruct-0905
 if __name__=='__main__':
-  a = VerificationAgent(provider='Groq',model='llama-3.1-8b-instant',benchmark_folder='gomela/benchmarks/blocking')
+  a = VerificationAgent(
+    provider='Groq',
+    model='llama-3.1-8b-instant',
+    test_paths='benchmarks_paths/test_set.txt', 
+    validation_paths='benchmarks_paths/validation_set.txt'
+    )
   df = a.run_on_benchmark()
   print(a.usage_metadata)
   print(df)

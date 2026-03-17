@@ -37,12 +37,15 @@ class ChainOfDebugAgent():
         self.logging = logging
         
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
-        """First node: runs a script to identify concurrency structures and functions using them"""        
+        """The function describes the first node logic: 
+        it runs a script to identify concurrency structures and functions using them"""        
         return {'concurrency_primitives': parse_go_concurrency(state['code'])}
 
     @handle_early_exit("trace_list")  
     def _generate_traces(self, state: State, config: RunnableConfig, node_name: str = None):
-        """Second call to generate a list of problematic traces, given the concurrency primitives identified"""
+        """The function implements the logic of the generate_trace node:
+        it asks the llm to generate a list of problematic traces, 
+        given the concurrency primitives identified."""
         
         schema = Traces.model_json_schema()
         sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"])
@@ -74,7 +77,7 @@ class ChainOfDebugAgent():
             return "NOT EMPTY"
 
     def _check_if_found_bug(self, state : State):
-        """Guard node to check if the agent found a bug"""
+        """This function describes the logic of the guard node that checks if the agent found a bug"""
         
         if state['early_stop']:
             return "STOP"
@@ -85,7 +88,9 @@ class ChainOfDebugAgent():
     
     @handle_early_exit("trace_eval")
     def _ask_if_trace_is_possible(self, state : State, config: RunnableConfig, node_name: str = None):
-        """Asking the llm to verify if the trace is possible or if it originates from an impossible execution path"""
+        """The function describes the logic of the check_trace node: 
+        it asks the llm to verify if the trace is possible or if it originates from 
+        an impossible execution path."""
         
         schema = TraceEvaluation.model_json_schema()
         input = [SystemMessage(self.verify_trace_prompt.format(trace=state["active_trace"])),HumanMessage("Code:\n"+state["code"])]
@@ -96,7 +101,8 @@ class ChainOfDebugAgent():
 
     @handle_early_exit("classification")
     def _create_classification(self, state : State, config: RunnableConfig, node_name: str = None):
-        """Ask the llm to classify the bug, given the program and the problematic trace"""
+        """The function describes the logic of the create classification node: 
+        it asks the llm to classify the bug, given the program and the problematic trace."""
 
         classification_schema = BugClassification.model_json_schema()
         input = [SystemMessage(self.classification_prompt.format(trace=state['active_trace'], trace_eval=state["trace_eval"])), HumanMessage("Code:\n"+state["code"])]
@@ -105,7 +111,8 @@ class ChainOfDebugAgent():
         return msg
     
     def _empty_classification(self, state: State):
-        """Since no problematic trace was found, the classification is empty"""
+        """Function that describe the logic of the empty classification node: 
+        since no problematic trace was found, there is no bug to report."""
         return {"classification" : None}
     
     def _early_termination(self, state : State):
@@ -154,6 +161,8 @@ class ChainOfDebugAgent():
         return response
     
     def try_to_invoke(self, msg, llm, node_name : str):
+        """The function tries to invoke llm with input msg, in case the operation fails
+        the user is asked to input Y/N to choose whether to abort the call graph or not"""
         while True:
             try:
                 response = llm.invoke(msg)
@@ -172,33 +181,36 @@ class ChainOfDebugAgent():
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
 
-    def run_on_benchmark(self, folder, save_usage_metadata=True):
-        projects = os.listdir(folder)
+    def run_on_benchmark(self, paths_file : str, save_usage_metadata=True):
+        """The function run the chain agent on all the programs specified by 'paths_file'."""
+        try:
+            with open(paths_file, "r") as f:
+                prg_paths = f.readlines()
+        except Exception as e:
+            print(f"Unable to read the paths_file: {e}")
+            return 
+
         classification_data = {'id':[], 'classification': []}
         thinking_log = {'id':[], 'thinking':[]}
         #usage_metadata = []
         verified_prg = 0
-        for proj in projects:
-            proj_folder = os.path.join(folder,proj)
-            for fragment in os.listdir(proj_folder):
-                frag_path = os.path.join(proj_folder, fragment)
-                frag_path = os.path.join(frag_path, proj+fragment+"_test.go")
-
-                with open(frag_path, "r") as f:
-                    print(f"File: {frag_path}")
-                    prog = f.read()
-                    response = self.invoke(prog)
-                    classification_data['classification'].append(response['classification'])
-                    thinking_log['thinking'].append(response['reasoning'])
-                    print(f"{response['classification']}")
-                    verified_prg+=1
+        for prg_path in prg_paths:
+            # [:-1] to ignore the '\n'
+            with open(prg_path[:-1], "r") as f:
+                print(f"File: {prg_path[:-1]}")
+                prog = f.read()
+                response = self.invoke(prog)
+                classification_data['classification'].append(response['classification'])
+                thinking_log['thinking'].append(response['reasoning'])
+                print(f"{response['classification']}")
+                verified_prg+=1
 
                 #if save_usage_metadata:
                 #    self.get_usage_metadata(response, verified_prg-1)
 
-                    print(f"Progress: {verified_prg}/68")
-                    print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
-                    time.sleep(10)
+                print(f"Progress: {verified_prg}/{len(prg_paths)}")
+                print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
+                time.sleep(10)
             
         classification_data['id'] = [i for i in range(verified_prg)]
         thinking_log['id'] = [i for i in range(verified_prg)]
@@ -213,6 +225,8 @@ class ChainOfDebugAgent():
         return res
     
     def try_into_dataframe(self, data):
+        """The function tries to save the data into a dataframe. 
+        In case the operation fails, the data is saved into a json file."""
         try:
             res = pd.DataFrame(data)
         except Exception as e:
@@ -231,18 +245,7 @@ class ChainOfDebugAgent():
 if __name__ == '__main__':
     a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant', json_mode=False, debug_level=1)
     a.compile_chain(save_img=True)
-
-    df = a.run_on_benchmark("gomela/benchmarks/blocking")
+    # Running the benchmark on the validation set
+    df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
     df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
-    #with open("gomela/benchmarks/blocking/kubernetes/5316/kubernetes5316_test.go", "r") as f:
-    #    prg = f.read()
-    #res1 = a.invoke(prg)
-    #print(f"Reponse: {res1}")
-    #try:
-    #    print(res1['classification'])
-    #except Exception as e:
-    #    print(f"Cannot access this field: {e}")
-    #    print(res1.keys())
-    #with open("./tool.log", "a") as f:
-    #    f.write(str(res1))
 
