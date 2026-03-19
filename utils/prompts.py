@@ -1,18 +1,3 @@
-IDENTIFY_CONCURRENCY_PROMPT = """
-You are a Go static analysis assistant. Your goal is to extract the concurrency "topology" of the provided code. 
-
-Focus exclusively on these primitives: 
-- Channels (buffered/unbuffered, size, direction)
-- sync.Mutex and sync.RWMutex
-- sync.WaitGroup
-- sync.Cond
-- select statements and goroutine spawns (go func())
-
-For every primitive found, follow the output schema.
-Do not analyze bugs; just map the primitives.
-If you do not find any, return a valid empty list: {{primitives:[]}}
-"""
-
 GENERATE_TRACES_PROMPT = """
 You are a concurrency adversary. Using the provided map of Go primitives, your task is to hypothesize a LIST of "Problematic Traces": each problematic trace should result in a blocking bug (deadlock, leak, or hang).
 
@@ -32,6 +17,9 @@ Example:
 Your goal is to find a specific order of actions that causes a blocking bug.
 Generate a reasonable amount of problematic traces.
 
+Code:
+{code}
+
 Primitives:
 {primitives}
 If you do not find any return a valid empty list: {{traces:[]}} 
@@ -50,14 +38,16 @@ Analyze the following:
 4. **Lifetime**: Does one goroutine's parent function exit and terminate the child before the trace can complete?
 
 If the trace is reachable, confirm it and explain how. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
+Code:
+{code}
 Trace:
 {trace}
 Do not escape single quotes (e.g., use ', not \')
 """
 
 CLASSIFICATION_PROMPT = """You are a Go Concurrency Expert and Bug classificator. You are given Go snippets of codes and an identified problematic trace that causes a bug
-You goal is to classify the bug illustrated by the trace through the GoBench paper classification.
-'Bug Classification Hierarchy (GoBench paper classification): classify it into exactly one subtype and subsubtype based on these definitions
+You goal is to classify the bug illustrated by the trace through the following classification.
+'Bug Classification Hierarchy: classify it into exactly one subtype and subsubtype based on these definitions
 '1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes
 '1.1. Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself
 '1.2. AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A
@@ -71,5 +61,7 @@ You goal is to classify the bug illustrated by the trace through the GoBench pap
 '3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:
 '3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.
 '3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.
+Code: 
+{code}
 Trace: {trace}, trace eval: {trace_eval}
 """
