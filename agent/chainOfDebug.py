@@ -219,7 +219,13 @@ class ChainOfDebugAgent():
                 print(f"Id: {id}")
                 prog = f.read()
                 response = self.invoke(prog)
-                classification_data[id] = response['classification'] 
+                if isinstance(response['classification'],dict):
+                    classification_data[id] = response['classification']
+                else:
+                    try:
+                        classification_data[id] = response['classification'].get_classification()
+                    except Exception as e:
+                        print(f"Could not convert response into dictionary: {e}")
                 thinking_log[id] = response['reasoning']
                 print(f"{response['classification']}")
                 verified_prg+=1
@@ -230,8 +236,6 @@ class ChainOfDebugAgent():
                 print(f"Progress: {verified_prg}/{len(prg_paths)}")
                 print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
                 time.sleep(10)
-                #TODO: momentaneous, just to test the saving format
-                break
                     
         res = self.try_into_dataframe(classification_data)
         try:
@@ -261,9 +265,10 @@ class ChainOfDebugAgent():
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.3-70b-versatile', json_mode=False, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant', json_mode=False, debug_level=1)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
-    df.to_csv(f"results/benchmark_results_{a.model}.csv", index=False)
+    df = df.T
+    df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)
 
