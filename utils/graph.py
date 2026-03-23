@@ -38,21 +38,32 @@ class TraceEvaluation(BaseModel):
         return """{"reachable": true | false,"explanation": "string"}"""
 
 class BugClassification(BaseModel):
+    reasoning: str = Field(description="Step-by-step analysis of the trace and code to identify the bug type.")
     cls : Literal['Blocking', 'Nonblocking']
     type : Literal[
+        # blocking:
         "Resource Deadlock", "Communication Deadlock", "Mixed Deadlock",
-        
+        # nonblocking:
+        "Traditional", "Go-Specific"
         ]
     subtype : Literal[
-        "Double Locking", "AB-BA Deadlock", "RWR Deadlock",
-        "Channel", "Condition Variable", "WaitGroup", "Channel & Context", "Channel & Condition Variable",
-        "Channel & Lock", "Channel & WaitGroup",
+        # blocking:
+        "Double locking", "AB-BA deadlock", "RWR deadlock",
+        "Channel", "Condition Variable", "Misuse WaitGroup", "Channel & Context", "Channel & Condition Variable",
+        "Channel & Lock", "Channel & waitGroup",
+        # nonblocking:
+        "Order violation", "Data race", "Misuse channel", "Anonymous function", "Testing library"
         ]
+    def get_classification(self):
+        return {'cls':self.cls, 'type':self.type, 'subtype':self.subtype}
     @classmethod
     def get_json_template(cls):
         return """{
-    "subtype": "Resource Deadlock | Communication Deadlock | Mixed Deadlock",
-    "subsubtype": "Double Locking | AB-BA Deadlock | RWR Deadlock | Channel | WaitGroup | Channel & Context | Channel & Condition Variable | Channel & Lock | Channel & WaitGroup"
+    "reasoning": "string",
+    "cls": "Blocking | Nonblocking",
+    "type": "Resource Deadlock | Communication Deadlock | Mixed Deadlock | Traditional | Go-specific",
+    "subtype": "Double Locking | AB-BA Deadlock | RWR Deadlock | Channel | WaitGroup | Channel & Context | Channel & Condition Variable | Channel & Lock | Channel & WaitGroup
+    | Order violation | Data race | Misuse channel | Anonymous function | Testing library"
 }"""
 
 class State(TypedDict):

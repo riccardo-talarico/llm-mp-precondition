@@ -1,7 +1,9 @@
 GENERATE_TRACES_PROMPT = """
-You are a concurrency adversary. Using the provided map of Go primitives, your task is to hypothesize a LIST of "Problematic Traces": each problematic trace should result in a blocking bug (deadlock, leak, or hang).
+You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify execution interleavings in Go code that result in deadlocks, data races, or logical hangs.
 
-Ignore the high-level business logic; focus only on how these primitives can interact in the worst possible order.
+### TASK
+Examine the provided Go code and its primitives. Hypothesize specific, valid execution sequences (traces) where concurrent operations overlap in a way that breaks the program.
+Ignore the high-level business logic; focus only on how the concurrency primitives can interact in the worst possible order.
 
 For each trace:
 **Step 1: interleaving_logic**
@@ -14,8 +16,8 @@ Example:
 - G2: mu.Lock() (blocked)
 - G1: ch <- val (blocked)
 
-Your goal is to find a specific order of actions that causes a blocking bug.
-Generate a reasonable amount of problematic traces.
+Your goal is to find a specific order of actions that causes a concurrency bug.
+Generate up to five problematic traces.
 
 Code:
 {code}
@@ -47,20 +49,39 @@ Do not escape single quotes (e.g., use ', not \')
 
 CLASSIFICATION_PROMPT = """You are a Go Concurrency Expert and Bug classificator. You are given Go snippets of codes and an identified problematic trace that causes a bug
 You goal is to classify the bug illustrated by the trace through the following classification.
-'Bug Classification Hierarchy: classify it into exactly one subtype and subsubtype based on these definitions
-'1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes
-'1.1. Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself
-'1.2. AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A
-'1.3. RWR Deadlock: Involving sync.RWMutex. A pending Write lock request takes priority, blocking subsequent Read requests even if the current lock is a Read lock, potentially creating a cycle if the current Reader waits for a new Reader.
-'2. Communication Deadlock: Goroutines block waiting for a message/signal from another. Subsubtypes:
-'2.1. Channel: Sending/Receiving on a channel where no counterpart is available to complete the handoff (e.g., unbuffered channel leaks.
-'2.2. Condition Variable: Misuse of sync.Cond (e.g., Wait() is called but Signal() or Broadcast() is never triggered due to logic errors).
-'2.3. WaitGroup: Calling Wait() on a sync.WaitGroup where the internal counter never reaches zero due to missing Done() calls.
-'2.4. Channel & Context: Complex communication blocks involving the interaction of channels with context.
-'2.5. Channel & Condition Variable: Complex communication blocks involving the interaction of channels with condition variables.
-'3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:
-'3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.
-'3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.
+Bug Classification Hierarchy: classify it into exactly one class, type and subtype based on these definitions:
+Class 1: Blocking Bugs, types:
+1.1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subtypes:
+1.1.1 Double locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself
+1.1.2. AB-BA deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A
+1.1.3. RWR deadlock: Involving sync.RWMutex. A specific 'Write-after-Read' priority block. Occurs when a recursive Read lock is attempted while a Write lock is already pending, 
+causing the second Read to block behind the Write, which is blocked by the first Read. 
+1.2. Communication Deadlock: Goroutines block waiting for a message/signal from another. Subtypes:
+1.2.1. Channel: Sending/Receiving on a channel where no counterpart is available to complete the handoff (e.g., unbuffered channel leaks.
+1.2.2. Condition Variable: Misuse of sync.Cond (e.g., Wait() is called but Signal() or Broadcast() is never triggered due to logic errors).
+1.2.3. WaitGroup: Calling Wait() on a sync.WaitGroup where the internal counter never reaches zero due to missing Done() calls.
+1.2.4. Channel & Context: Complex communication blocks involving the interaction of channels with context.
+1.2.5. Channel & Condition Variable: Complex communication blocks involving the interaction of channels with condition variables.
+1.3. Mixed Deadlock: A deadlock cycle specifically requiring at least one shared-memory primitive (Lock/WaitGroup) AND at least one communication primitive (Channel). 
+Example: G1 holds Mutex A and waits for Channel B; G2 sends to Channel B but is blocked waiting for Mutex A. Subtypes:
+1.3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.
+1.3.2. Channel & waitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.
+Class 2: Nonblocking bugs, types:
+2.1 Traditional: traditional concurrency issues that are also found in other languages. Subtypes:
+2.1.1 Data race: Concurrent access to a memory location where at least one access is a write.
+2.1.2 Order violation: A bug where Goroutine G1 relies on a state or value from Goroutine G2, 
+but executes before Goroutine G2 has completed the necessary work (e.g., accessing a resource before it is initialized or after it is closed).
+2.2 Go-Specific: Non-blocking bugs that arise from unique Go language features or its standard library. Subtypes:
+2.2.1 Anonymous Function: Data races caused by variables implicitly shared between a parent and child goroutine within an anonymous function.
+2.2.2 Misuse channel: Issues like setting a channel to nil while other goroutines are communicating on it, which can trigger data races.
+2.2.3 Testing Library: Bug caused by the misuse of the Testing library of Go.
+
+Logic Steps:
+1. Analyze the trace
+2. Determine if the bug cause a total/partial halt (blocking) or incorrect execution/data (nonblocking)
+3. Identify the root cause primitive (e.g. is it a channel?)
+4. Classify it according to the hierarchy
+
 Code: 
 {code}
 Trace: {trace}, trace eval: {trace_eval}
