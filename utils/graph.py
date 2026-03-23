@@ -38,11 +38,15 @@ class TraceEvaluation(BaseModel):
         return """{"reachable": true | false,"explanation": "string"}"""
 
 class BugClassification(BaseModel):
-    subtype : Literal["Resource Deadlock", "Communication Deadlock", "Mixed Deadlock"]
-    subsubtype : Literal[
+    cls : Literal['Blocking', 'Nonblocking']
+    type : Literal[
+        "Resource Deadlock", "Communication Deadlock", "Mixed Deadlock",
+        
+        ]
+    subtype : Literal[
         "Double Locking", "AB-BA Deadlock", "RWR Deadlock",
         "Channel", "Condition Variable", "WaitGroup", "Channel & Context", "Channel & Condition Variable",
-        "Channel & Lock", "Channel & WaitGroup"
+        "Channel & Lock", "Channel & WaitGroup",
         ]
     @classmethod
     def get_json_template(cls):
@@ -73,7 +77,7 @@ def handle_early_exit(state_key : str):
                 node_name = config["metadata"].get("langgraph_node", node_name)
             result = func(self, state, config, node_name=node_name, **kwargs)
             if isinstance(result,str) and result == "ABORTED":
-                return {'early_stop': True}
+                return {'early_stop': True, 'classification':{'type':None,'subtype':None,'cls':None}}
             # Otherwise wrap the expected result in the corresponding key
             try:
                 reasoning = result['raw'].additional_kwargs.get("reasoning_content")

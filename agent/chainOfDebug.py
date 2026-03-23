@@ -14,6 +14,7 @@ from utils.graph import *
 from utils.go_parsing import parse_go_concurrency
 from utils.experiments import OllamaExperimentConfig
 from utils.tool_analysis import log_tool_interactions
+from utils.results import extract_id
 
 load_dotenv()
 
@@ -47,6 +48,7 @@ class ChainOfDebugAgent():
         self.load_prompts()
         self.debug_level = debug_level
         self.logging = logging
+        self.model = model
         
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
         """The function describes the first node logic: 
@@ -124,7 +126,8 @@ class ChainOfDebugAgent():
     def _empty_classification(self, state: State):
         """Function that describe the logic of the empty classification node: 
         since no problematic trace was found, there is no bug to report."""
-        return {"classification" : None}
+
+        return {"classification" : {'type': None, 'subtype':None, 'cls':None}}
     
     def _early_termination(self, state : State):
         """Routing function to handle early stopping"""
@@ -204,18 +207,20 @@ class ChainOfDebugAgent():
             print(f"Unable to read the paths_file: {e}")
             return 
 
-        classification_data = {'id':[], 'classification': []}
-        thinking_log = {'id':[], 'thinking':[]}
+        classification_data = {}
+        thinking_log = {}
         #usage_metadata = []
         verified_prg = 0
         for prg_path in prg_paths:
             # [:-1] to ignore the '\n'
-            with open(prg_path[:-1], "r") as f:
-                print(f"File: {prg_path[:-1]}")
+            prg_path = prg_path[:-1]
+            with open(prg_path, "r") as f:
+                id = extract_id(prg_path)
+                print(f"Id: {id}")
                 prog = f.read()
                 response = self.invoke(prog)
-                classification_data['classification'].append(response['classification'])
-                thinking_log['thinking'].append(response['reasoning'])
+                classification_data[id] = response['classification'] 
+                thinking_log[id] = response['reasoning']
                 print(f"{response['classification']}")
                 verified_prg+=1
 
@@ -225,13 +230,12 @@ class ChainOfDebugAgent():
                 print(f"Progress: {verified_prg}/{len(prg_paths)}")
                 print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
                 time.sleep(10)
-            
-        classification_data['id'] = [i for i in range(verified_prg)]
-        thinking_log['id'] = [i for i in range(verified_prg)]
-        
+                #TODO: momentaneous, just to test the saving format
+                break
+                    
         res = self.try_into_dataframe(classification_data)
         try:
-            with open("result_"+self.model+".json", "w") as f:
+            with open("results/thinking_"+self.model+".json", "w") as f:
                 f.write(json.dumps(thinking_log, indent=4))
         except Exception as e:
             print(f"Cannot save thinking data: {e}")
@@ -246,7 +250,7 @@ class ChainOfDebugAgent():
         except Exception as e:
             print(f"Error while transforming into dataframe: {e}")
             res = pd.DataFrame()
-            with open("result_"+self.model+".json", "w") as f:
+            with open("result/"+self.model+".json", "w") as f:
                 f.write(json.dumps(data, indent=4))
         return res
 
@@ -257,9 +261,9 @@ class ChainOfDebugAgent():
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant', json_mode=False, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='llama-3.3-70b-versatile', json_mode=False, debug_level=1)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
-    df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
+    df.to_csv(f"results/benchmark_results_{a.model}.csv", index=False)
 
