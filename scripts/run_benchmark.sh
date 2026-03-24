@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # ── Required ───────────────────────────────────────────────────────────────────
-INSTANCE_ID="${INSTANCE_ID:-i-0b72fe63ba947f187}"  # ollama (g6e.2xlarge)
-KEY_PATH="${KEY_PATH:-$(dirname "$0")/../ollama.pem}"
-
+INSTANCE_ID="${INSTANCE_ID:-i-00df26dabf73bd992}"
+KEY_PATH="${KEY_PATH:-~/.ssh/ollama.pem}"
 # ── Optional ───────────────────────────────────────────────────────────────────
 AWS_REGION="${AWS_REGION:-us-east-1}"
 REMOTE_USER="${REMOTE_USER:-ubuntu}"
@@ -12,7 +11,8 @@ REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu/ollama-benchmark}"
 RESULTS_LOCAL_DIR="${RESULTS_LOCAL_DIR:-./results}"
 MODEL_OVERRIDE="${MODEL_OVERRIDE:-}"
 CONFIG_FILE="${CONFIG_FILE:-config/experiment.yaml}"
-KEEP_INSTANCE="${KEEP_INSTANCE:-false}"
+KEEP_INSTANCE="${KEEP_INSTANCE:-false}"   # ← false = stoppa sempre alla fine
+OLLAMA_MODELS_DIR="${OLLAMA_MODELS_DIR:-/opt/dlami/nvme/ollama/models}"  # ← NVMe
 
 SSH_OPTS=(-i "${KEY_PATH}" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5)
 SCP_OPTS=(-i "${KEY_PATH}" -o StrictHostKeyChecking=no)
@@ -21,12 +21,12 @@ SCP_OPTS=(-i "${KEY_PATH}" -o StrictHostKeyChecking=no)
 INSTANCE_WAS_RUNNING=false
 
 stop_if_we_started() {
-  if [[ "${INSTANCE_WAS_RUNNING}" == "false" && "${KEEP_INSTANCE}" != "true" ]]; then
+  if [[ "${KEEP_INSTANCE}" != "true" ]]; then
     echo "Stopping instance ${INSTANCE_ID}..."
     aws ec2 stop-instances --instance-ids "${INSTANCE_ID}" --region "${AWS_REGION}" >/dev/null
     echo "Stop requested (instance will stop shortly)."
   else
-    echo "Leaving instance ${INSTANCE_ID} as-is."
+    echo "Leaving instance ${INSTANCE_ID} as-is (KEEP_INSTANCE=true)."
   fi
 }
 trap stop_if_we_started EXIT
@@ -42,7 +42,6 @@ if [[ "${INITIAL_STATE}" == "running" ]]; then
   INSTANCE_WAS_RUNNING=true
   echo "Instance ${INSTANCE_ID} already running."
 else
-  # If the instance is still stopping, wait for it to fully stop first
   if [[ "${INITIAL_STATE}" == "stopping" ]]; then
     echo "Instance is stopping, waiting for it to fully stop..."
     aws ec2 wait instance-stopped --instance-ids "${INSTANCE_ID}" --region "${AWS_REGION}"
@@ -78,6 +77,51 @@ if [[ "${SSH_READY}" != "true" ]]; then
 fi
 echo "SSH ready."
 
+# ── Install Ollama + configure NVMe ───────────────────────────────────────────
+echo "Installing Ollama and configuring NVMe storage..."
+ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
+  # Installa Ollama se non presente
+  if ! command -v ollama &>/dev/null; then
+    echo 'Installing Ollama...'
+    curl -fsSL https://ollama.com/install.sh | sh
+  else
+    echo 'Ollama already installed, skipping.'
+  fi
+
+  # Crea cartella modelli sull'NVMe
+  sudo mkdir -p '${OLLAMA_MODELS_DIR}'
+  sudo chown -R \${USER}:\${USER} '${OLLAMA_MODELS_DIR}'
+
+  # Configura Ollama per usare NVMe
+  sudo mkdir -p /etc/systemd/system/ollama.service.d
+  sudo tee /etc/systemd/system/ollama.service.d/override.conf <<EOF
+[Service]
+Environment=\"OLLAMA_MODELS=${OLLAMA_MODELS_DIR}\"
+EOF
+
+  # Riavvia Ollama con la nuova configurazione
+  sudo systemctl daemon-reload
+  sudo systemctl enable ollama
+  sudo systemctl restart ollama
+
+  # Riavvia Ollama e aspetta che sia pronto
+  echo 'Waiting for Ollama to be ready...'
+  OLLAMA_READY=false
+  for i in {1..30}; do
+    if curl -s http://127.0.0.1:11434/api/tags &>/dev/null; then
+      echo 'Ollama ready.'
+      OLLAMA_READY=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ \"\${OLLAMA_READY}\" != \"true\" ]]; then
+    echo 'Ollama not responding, trying ollama serve...'
+    nohup ollama serve &>/tmp/ollama.log &
+    sleep 5
+  fi
+"
+
 # ── Prepare config ─────────────────────────────────────────────────────────────
 EFFECTIVE_CONFIG="${CONFIG_FILE}"
 if [[ -n "${MODEL_OVERRIDE}" ]]; then
@@ -89,21 +133,32 @@ fi
 # ── Copy files ─────────────────────────────────────────────────────────────────
 echo "Copying files to ${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}..."
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
-  "mkdir -p '${REMOTE_DIR}'/{config,results,runner,utils,agent}"
+  "mkdir -p '${REMOTE_DIR}'/{config,utils,results,agent,runner,benchmarks,benchmarks_paths}"
 
 scp "${SCP_OPTS[@]}" \
   "${EFFECTIVE_CONFIG}" \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/config/experiment.yaml"
 
-scp "${SCP_OPTS[@]}" -r \
-  runner \
-  utils \
-  agent \
-  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/runner/"
+scp "${SCP_OPTS[@]}" -r utils \
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+
+scp "${SCP_OPTS[@]}" -r runner\
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+
+scp "${SCP_OPTS[@]}" -r agent\
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+
+# Benchmarks
+scp "${SCP_OPTS[@]}" -r benchmarks \
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+
+# Benchmark paths
+scp "${SCP_OPTS[@]}" -r benchmarks_paths \
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
 
 echo "Files copied."
 
-# ── Install Python deps (virtualenv, reused across runs) ──────────────────────
+# ── Install Python deps ────────────────────────────────────────────────────────
 echo "Installing Python dependencies..."
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
   sudo apt-get install -y -q python3-venv &&
@@ -128,17 +183,20 @@ fi
 
 for model in "${MODELS_TO_PULL[@]}"; do
   echo "Pulling model: ${model}..."
-  ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "ollama pull '${model}'"
+  ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
+    "OLLAMA_MODELS='${OLLAMA_MODELS_DIR}' ollama pull '${model}'"
 done
 
 # ── Run benchmark ──────────────────────────────────────────────────────────────
 echo "Running benchmark..."
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
   "cd '${REMOTE_DIR}' && \
+   PYTHONPATH='${REMOTE_DIR}' \
    OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+   OLLAMA_MODELS='${OLLAMA_MODELS_DIR}' \
    CONFIG_PATH='${REMOTE_DIR}/config/experiment.yaml' \
    RESULTS_DIR='${REMOTE_DIR}/results' \
-   /home/${REMOTE_USER}/ollama-venv/bin/python3 runner/main.py"
+   /home/${REMOTE_USER}/ollama-venv/bin/python3 -m runner.main"
 echo "Benchmark complete."
 
 # ── Copy results back ──────────────────────────────────────────────────────────
@@ -147,4 +205,4 @@ echo "Downloading results to ${RESULTS_LOCAL_DIR}/ ..."
 scp "${SCP_OPTS[@]}" -r \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/results/." \
   "${RESULTS_LOCAL_DIR}/"
-echo "Results saved to ${RESULTS_LOCAL_DIR}/"
+echo "Results saved to ${RESULTS_LOCAL_DIR}/
