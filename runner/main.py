@@ -3,10 +3,14 @@ from utils.experiments import *
 from pathlib import Path
 from utils.results import print_results
 import pandas as pd
+import os
 
 
 if __name__ == '__main__':
-    cfg = load_config(Path('config/experiment.yaml'))
+    cfg_path = os.getenv("CONFIG_PATH","config/experiment.yaml")
+    cfg = load_config(Path(cfg_path))
+    cfg.base_url = os.getenv("OLLAMA_BASE_URL") or cfg.base_url
+    
     
     agent = ChainOfDebugAgent('Ollama', cfg.model, ollama_cfg=cfg)
     do_warmup(cfg.base_url, cfg.model, 30, cfg.options)
