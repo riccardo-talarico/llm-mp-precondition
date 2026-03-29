@@ -1,6 +1,90 @@
 import pandas as pd
 import json, sys
 from sklearn.metrics import balanced_accuracy_score, f1_score, classification_report
+from langchain.messages import AIMessage
+
+
+def get_usage_metadata(response, msg_id:int = 0):
+    """The function tries to extract the usage_metadata from the 'response'.
+    The couple '(msg_id, response.usage_metadata)' is appended to the result value."""
+    res = []
+    if isinstance(response, dict):
+      try:
+        raw = response['raw']
+      except Exception as e:
+        res.append(f"Unable to fetch the response. {e}")
+        print(response)
+        return
+    
+    if isinstance(raw,list):
+      for msg in raw:
+        if isinstance(msg, AIMessage): 
+          if hasattr(msg, 'usage_metadata'):
+            res.append((msg_id,msg.usage_metadata))
+          elif hasattr(msg,'response_metadata'):
+            res.append((msg_id,msg.response_metadata))
+          elif hasattr(msg,'additional_kwargs'):
+            res.append((msg_id,msg.additional_kwargs))
+    
+    elif isinstance(raw,dict):
+      try:
+        res.append((msg_id, raw['response_metadata']))
+      except Exception as e:
+        print(f"Could not append metadata: {e}")
+    elif isinstance(raw,AIMessage):
+      try:
+        res.append((msg_id, raw.response_metadata))
+      except Exception as e:
+        print(f"Could not append metadata: {e}")
+    
+    
+    return res
+
+
+def try_into_dataframe(data, model_name):
+        """The function tries to save the data into a dataframe. 
+        In case the operation fails, the data is saved into a json file.
+        The save file path is 'result/model_name'"""
+        try:
+            res = pd.DataFrame(data)
+        except Exception as e:
+            print(f"Error while transforming into dataframe: {e}")
+            res = pd.DataFrame()
+            with open("results/"+model_name+".json", "a+") as f:
+                f.write(json.dumps(data, indent=4))
+        return res
+
+
+def get_token_count(usage_metadata):
+    """The function tries to fetch the 'usage_metadata' to extract the input and output tokens and returns them.
+    In case the extraction fails it returns (-1,-1)."""
+    if usage_metadata == []:
+      return (-1,-1)
+    input_tokens,output_tokens = 0,0
+    for id,metadata in usage_metadata:
+      try:
+        usage = metadata.get("token_usage", {}) # Try generic name first
+        if not usage:
+            # Fallback to Ollama key names
+            input_tokens += metadata.get("prompt_eval_count", 0)
+            output_tokens += metadata.get("eval_count", 0)
+        else:
+            input_tokens += usage.get("prompt_tokens", 0)
+            output_tokens += usage.get("completion_tokens", 0)
+      except Exception as e:
+        print(f"Error during extraction of token count: {e}")
+        return -1,-1
+    return input_tokens,output_tokens
+
+def print_token_count(usage_metadata):
+    """The function prints the input, output and total tokens usage extracted from the 'usage_metadata'.
+    In case there is an error during the extraction it immediately returns, without printing anything."""
+    input_tokens,output_tokens=get_token_count(usage_metadata)
+    if input_tokens == -1:
+      return
+    print(f"Input tokens: {input_tokens}")
+    print(f"Output tokens: {output_tokens}")
+    print(f"Total tokens: {input_tokens+output_tokens}")
 
 
 def hierarchical_accuracy(df):
