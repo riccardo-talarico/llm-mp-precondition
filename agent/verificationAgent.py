@@ -7,6 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain.messages import HumanMessage, SystemMessage, AIMessage
 from utils.tool_analysis import log_tool_interactions
+from utils.prompts import SINGLE_PROMPT_DETECTION_AND_CLASSIFICATION
 import pandas as pd
 
 
@@ -27,17 +28,19 @@ class VerificationAgent():
     self.logging = logging
     self.model = model
     self.usage_metadata = []
+    self.last_run_time = -1
 
     # Defining JSON response schema
     properties_schemas = {}
-    properties_schemas['categorization'] = {
+    properties_schemas['classification'] = {
       'type': "object",
-      'description':"Provide a categorization for the bug found in the code based on the GoBench paper classification",
+      'description':"Provide a classification for the bug (if there is one) found in the code based on the hierarchy provided. In case there is no bug, put 'None' for all the required fields",
       'properties': {
-        'subtype':{'type':'string','description':'Subtype of the bug, chosen according to the GoBench paper'},
-        'subsubtype':{'type':'string','description':'Subsubtype of the bug, chosen according to the GoBench paper'}
+        'class':{'type':'string','description':'Class of the bug (blocking or nonblocking)'},
+        'type':{'type':'string','description':'Type of the bug, chosen according to the classification hierarchy'},
+        'subtype':{'type':'string','description':'Subtype of the bug, chosen according to the classification hierarchy'}
       },
-      'required':['subtype','subsubtype']
+      'required':['class','subtype','type']
     }
     self.response_schema = {
       "type": "object",
@@ -61,42 +64,28 @@ class VerificationAgent():
     with open(path,'r') as f:
       prg_paths = f.readlines()
 
-    sysMsg = SystemMessage(content='Role: You are a Go Concurrency Expert and Program Verifier. Your task is to analyze Go code snippets to identify and classify blocking bugs according to the following hierarchy.'+\
-'Bug Classification Hierarchy: If a blocking bug is detected, classify it into exactly one subtype and subsubtype based on these definitions:'+
-'1. Resource Deadlock: Goroutines block waiting for a synchronization resource (lock) held by another. Subsubtypes:'+
-'1.1. Double Locking: A single goroutine attempts to acquire a lock it already holds, causing it to block itself.'+
-'1.2. AB-BA Deadlock: Multiple goroutines acquire multiple locks in conflicting orders (e.g., G1: Lock A then B; G2: Lock B then A).'+
-'1.3. RWR Deadlock: Involving sync.RWMutex. A pending Write lock request takes priority, blocking subsequent Read requests even if the current lock is a Read lock, potentially creating a cycle if the current Reader waits for a new Reader.'+
-'2. Communication Deadlock: Goroutines block waiting for a message/signal from another. Subsubtypes:' +
-'2.1. Channel: Sending/Receiving on a channel where no counterpart is available to complete the handoff (e.g., unbuffered channel leaks).' +
-'2.2. Condition Variable: Misuse of sync.Cond (e.g., Wait() is called but Signal() or Broadcast() is never triggered due to logic errors).' +
-'2.3. WaitGroup: Calling Wait() on a sync.WaitGroup where the internal counter never reaches zero due to missing Done() calls.'+
-'2.4. Channel & Context: Complex communication blocks involving the interaction of channels with context.'+
-'2.5. Channel & Condition Variable: Complex communication blocks involving the interaction of channels with condition variables.'+
-'3. Mixed Deadlock: A cycle created by mixing message-passing and shared-memory synchronization. Subsubtypes:'+
-'3.1. Channel & Lock: A cycle where a goroutine holds a lock while waiting for a channel operation, while the counterpart for that channel operation is waiting for the same lock.'+
-'3.2. Channel & WaitGroup: A cycle where a channel operation is blocked by a WaitGroup.Wait(), or a WaitGroup.Done() is blocked by a channel operation.'+
-'Verification Logic:'+
-'Assume Partial Context: If the snippet is missing a main function, assume the provided functions are called in a way that triggers the concurrency logic shown.'+
-'Strict Classification: Use only the specific subtype (Resource Deadlock, Communication Deadlock or Mixed Deadlock) and subsubtype name (e.g., Channel & Lock) in your response. DO NOT USE OTHER LABELS.'+
-'If no bug is found then insert None both as the subtype and subsubtype. Follow the JSON structure provided'
-      )
+    sysMsg = SystemMessage(content=SINGLE_PROMPT_DETECTION_AND_CLASSIFICATION)
     classification_data = {'id':[], 'classification': []}
-    usage_metadata = []
     verified_prg = 0
+    start = time.time()
     for prg_path in prg_paths:
       with open(prg_path[:-1], "r") as f:
         print(f"File: {prg_path[:-1]}")
         prog = f.read()
         messages = [sysMsg, HumanMessage(content=prog)]
         default_response = {
-          'categorization': {'subsubtype': 'Skipped', 'subtype': 'Skipped'},
+          'class':'None','type': 'None', 'subtype': 'None'
         }
         response = self.try_to_invoke(messages, default_response)
-        print(f"{response['parsed']}")
+        try:
+          print(f"{response['parsed']}")
+          print(f"{response['raw']}")
+        except:
+          print(response)
+          response = {'parsed':response, 'raw':response}
         try:
           reasoning = response['raw'].additional_kwargs.get("reasoning_content")
-          print(f"Reasoning:{reasoning}")
+          #print(f"Reasoning:{reasoning}")
         except Exception as e:
           print(f"Cannot extract reasoning tokens: {e}")
 
@@ -106,10 +95,10 @@ class VerificationAgent():
         if save_usage_metadata:
           self.get_usage_metadata(response, verified_prg-1)
 
-        print(f"Progress: {verified_prg}/68")
+        print(f"Progress: {verified_prg}/{len(prg_paths)}")
         print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
         time.sleep(15)
-          
+    self.last_run_time = time.time()-start
     classification_data['id'] = [i for i in range(verified_prg)]
     
     if self.logging:
@@ -139,18 +128,69 @@ class VerificationAgent():
         f.write(json.dumps(data, indent=4))
     return res
 
-  def get_usage_metadata(self, response, msg_id = 0):
-
+  def get_usage_metadata(self, response, msg_id:int = 0):
+    """The function tries to extract the usage_metadata from the 'response'.
+    The couple '(msg_id, response.usage_metadata)' is appended in the usage_metadata field."""
     if isinstance(response, dict):
       try:
-        response = response['raw']
+        raw = response['raw']
       except Exception as e:
         self.usage_metadata.append(f"Unable to fetch the response. {e}")
+        print(response)
         return
-
-    for msg in response:
-      if isinstance(msg, AIMessage) and hasattr(msg, 'usage_metadata'):
-        self.usage_metadata.append((msg_id,msg.usage_metadata))
+    
+    if isinstance(raw,list):
+      for msg in raw:
+        if isinstance(msg, AIMessage): 
+          if hasattr(msg, 'usage_metadata'):
+            self.usage_metadata.append((msg_id,msg.usage_metadata))
+          elif hasattr(msg,'response_metadata'):
+            self.usage_metadata.append((msg_id,msg.response_metadata))
+          elif hasattr(msg,'additional_kwargs'):
+            self.usage_metadata.append((msg_id,msg.additional_kwargs))
+    
+    elif isinstance(raw,dict):
+      try:
+        self.usage_metadata.append((msg_id, raw['response_metadata']))
+      except Exception as e:
+        print(f"Could not append metadata: {e}")
+    elif isinstance(raw,AIMessage):
+      try:
+        self.usage_metadata.append((msg_id, raw.response_metadata))
+      except Exception as e:
+        print(f"Could not append metadata: {e}")
+      
+      
+  def get_token_count(self):
+    """The function tries to fetch the saved usage_metadata to extract the input and output tokens and returns them.
+    In case the extraction fails it returns (-1,-1)."""
+    if self.usage_metadata == []:
+      return (-1,-1)
+    input_tokens,output_tokens = 0,0
+    for id,metadata in self.usage_metadata:
+      try:
+        usage = metadata.get("token_usage", {}) # Try generic name first
+        if not usage:
+            # Fallback to Ollama key names
+            input_tokens += metadata.get("prompt_eval_count", 0)
+            output_tokens += metadata.get("eval_count", 0)
+        else:
+            input_tokens += usage.get("prompt_tokens", 0)
+            output_tokens += usage.get("completion_tokens", 0)
+      except Exception as e:
+        print(f"Error during extraction of token count: {e}")
+        return -1,-1
+    return input_tokens,output_tokens
+    
+  def print_token_count(self):
+    """The function prints the input, output and total tokens usage extracted from the usage_metadata.
+    In case there is an error during the extraction it immediately returns, without printing anything."""
+    input_tokens,output_tokens=self.get_token_count()
+    if input_tokens == -1:
+      return
+    print(f"Input tokens: {input_tokens}")
+    print(f"Output tokens: {output_tokens}")
+    print(f"Total tokens: {input_tokens+output_tokens}")
 
     
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-maverick-17b-128e-instruct,
@@ -162,13 +202,14 @@ if __name__=='__main__':
     test_paths='benchmarks_paths/test_set.txt', 
     validation_paths='benchmarks_paths/validation_set.txt'
     )
-  df = a.run_on_benchmark()
-  print(a.usage_metadata)
-  print(df)
+  df = a.run_on_benchmark(validation=True, save_usage_metadata=True)
+  print(f"Time required: {a.last_run_time}")
+  print(f"Usage metadata: {a.usage_metadata}")
+  a.print_token_count()
   stop = False
   while not stop:
     try:
-      df.to_csv(f"benchmark_results_{a.model}.csv", index=False)
+      df.to_csv(f"benchmark_results_{a.model}.csv", index=False)      
       stop = True
     except Exception as e:
       stop = False
