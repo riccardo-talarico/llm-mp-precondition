@@ -3,20 +3,40 @@ from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
-from langchain.messages import SystemMessage
+from langchain.messages import SystemMessage, AIMessage
+from langchain_classic.output_parsers import PydanticOutputParser, OutputFixingParser
+from ollama import ResponseError as OllamaResponseError
 
 import os, time, json
-import pandas as pd
 from dotenv import load_dotenv
+from langchain_core.exceptions import OutputParserException
+from pydantic import ValidationError
+
+import ast
+from groq import BadRequestError
+
 
 from utils.prompts import *
 from utils.graph import *
+from utils.output_parser import try_to_invoke
 from utils.go_parsing import parse_go_concurrency
 from utils.experiments import OllamaExperimentConfig
 from utils.tool_analysis import log_tool_interactions
-from utils.results import extract_id
+from utils.results import extract_id, try_into_dataframe, get_usage_metadata, print_token_count
 
 load_dotenv()
+
+
+
+def fix_escaped_quotes(text: str) -> str:
+    """
+    Replaces literal escaped single quotes (\') with normal single quotes (').
+    """
+    if not isinstance(text, str):
+        return text
+    return text.replace("\\'", "'")
+
+
 
 class ChainOfDebugAgent():
     def __init__(
@@ -26,15 +46,15 @@ class ChainOfDebugAgent():
             json_mode=False, 
             debug_level: int = 0, 
             logging = True,
-            ollama_cfg : None | OllamaExperimentConfig = None
+            ollama_cfg : None | OllamaExperimentConfig = None,
         ):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
         elif provider == 'Groq':
             api_key = os.getenv('GROQ_API_KEY')
-            self.llm = ChatGroq(model=model, groq_api_key=api_key)
+            self.llm = ChatGroq(model=model, groq_api_key=api_key, max_retries = 1)
         elif provider == 'Ollama':
-            llm = ChatOllama(
+            self.llm = ChatOllama(
             base_url=ollama_cfg.base_url,
             model=ollama_cfg.model,
             temperature=ollama_cfg.temperature,
@@ -49,7 +69,9 @@ class ChainOfDebugAgent():
         self.debug_level = debug_level
         self.logging = logging
         self.model = model
-        
+        self.last_run_time = -1
+        self.usage_metadata = []
+            
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
         """The function describes the first node logic: 
         it runs a script to identify concurrency structures and functions using them"""        
@@ -61,12 +83,11 @@ class ChainOfDebugAgent():
         it asks the llm to generate a list of problematic traces, 
         given the concurrency primitives identified."""
         
-        schema = Traces.model_json_schema()
+        
         sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"],code=state['code'])
         input = [SystemMessage(sysprompt)]
         structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method, include_raw=True)
-        msg = self.try_to_invoke(input, structured_llm, node_name)
-
+        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=Traces,fixing_llm=self.llm,execution_point=node_name)
         return msg
     
     def _trace_selector(self, state:State):
@@ -106,10 +127,9 @@ class ChainOfDebugAgent():
         it asks the llm to verify if the trace is possible or if it originates from 
         an impossible execution path."""
         
-        schema = TraceEvaluation.model_json_schema()
         input = [SystemMessage(self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"]))]
         structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method, include_raw=True)
-        msg = self.try_to_invoke(input,structured_llm, node_name)
+        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=TraceEvaluation,fixing_llm=self.llm,execution_point=node_name)
         return msg
 
 
@@ -120,7 +140,7 @@ class ChainOfDebugAgent():
 
         input = [SystemMessage(self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"]))]
         structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method, include_raw=True)
-        msg = self.try_to_invoke(input,structured_llm, node_name)
+        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=BugClassification,fixing_llm=self.llm,execution_point=node_name)
         return msg
     
     def _empty_classification(self, state: State):
@@ -169,7 +189,7 @@ class ChainOfDebugAgent():
         if save_img:
             save_graph_img(self.graph, "chain_of_debug")    
 
-    def invoke(self, code : str):
+    def invoke_chain(self, code : str):
         """The function invokes the agent on the code provided."""
         if not self.compiled:
             print("WARNING: agent not compiled: you must call the 'compile_chain' method first.")
@@ -179,26 +199,13 @@ class ChainOfDebugAgent():
             log_tool_interactions(response)
         return response
     
-    def try_to_invoke(self, msg, llm, node_name : str):
-        """The function tries to invoke llm with input msg, in case the operation fails
-        the user is asked to input Y/N to choose whether to abort the call graph or not"""
-        while True:
-            try:
-                response = llm.invoke(msg)
-                return response
-            except Exception as e:
-                print(f"Error in node: [{node_name}]:{e}")
-                s = input("Abort graph call? [Y/N]")
-                if s == 'Y':
-                    return "ABORTED"
-
     def load_prompts(self):
         self.generate_list_of_traces_prompt = GENERATE_TRACES_PROMPT
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
 
-    def run_on_benchmark(self, paths_file : str, save_usage_metadata=True):
-        """The function run the chain agent on all the programs specified by 'paths_file'.
+    def run_on_benchmark(self, paths_file : str, save_usage_metadata:bool=True, insert_sleep:bool=True):
+        """The function runs the chain agent on all the programs specified by 'paths_file'.
         This must be a file containing all the paths to the go codes it is intended to analyze."""
         try:
             with open(paths_file, "r") as f:
@@ -211,6 +218,7 @@ class ChainOfDebugAgent():
         thinking_log = {}
         #usage_metadata = []
         verified_prg = 0
+        start = time.time()
         for prg_path in prg_paths:
             # [:-1] to ignore the '\n'
             prg_path = prg_path[:-1]
@@ -218,7 +226,7 @@ class ChainOfDebugAgent():
                 id = extract_id(prg_path)
                 print(f"Id: {id}")
                 prog = f.read()
-                response = self.invoke(prog)
+                response = self.invoke_chain(prog)
                 if isinstance(response['classification'],dict):
                     classification_data[id] = response['classification']
                 else:
@@ -230,14 +238,16 @@ class ChainOfDebugAgent():
                 print(f"{response['classification']}")
                 verified_prg+=1
 
-                #if save_usage_metadata:
-                #    self.get_usage_metadata(response, verified_prg-1)
+                if save_usage_metadata:
+                    self.usage_metadata += get_usage_metadata(response, verified_prg-1)
 
                 print(f"Progress: {verified_prg}/{len(prg_paths)}")
-                print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
-                time.sleep(10)
-                    
-        res = self.try_into_dataframe(classification_data)
+                if insert_sleep:
+                    print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
+                    time.sleep(10)
+
+        self.last_run_time = time.time()-start
+        res = try_into_dataframe(classification_data, a.model)
         try:
             with open("results/thinking_"+self.model+".json", "w") as f:
                 f.write(json.dumps(thinking_log, indent=4))
@@ -245,21 +255,6 @@ class ChainOfDebugAgent():
             print(f"Cannot save thinking data: {e}")
 
         return res
-    
-    def try_into_dataframe(self, data):
-        """The function tries to save the data into a dataframe. 
-        In case the operation fails, the data is saved into a json file."""
-        try:
-            res = pd.DataFrame(data)
-        except Exception as e:
-            print(f"Error while transforming into dataframe: {e}")
-            res = pd.DataFrame()
-            with open("result/"+self.model+".json", "w") as f:
-                f.write(json.dumps(data, indent=4))
-        return res
-
-
-
 # llama-3.3-70b-versatile, qwen/qwen3-32b (No support tool calling), 
 # moonshotai/kimi-k2-instruct, llama-3.1-8b-instant
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
@@ -269,6 +264,8 @@ if __name__ == '__main__':
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
+    print_token_count(a.usage_metadata)
+    print(f"Time required:{a.last_run_time}")
     df = df.T
     df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)
 

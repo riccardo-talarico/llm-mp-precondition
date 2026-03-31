@@ -13,9 +13,8 @@ def get_usage_metadata(response, msg_id:int = 0):
         raw = response['raw']
       except Exception as e:
         res.append(f"Unable to fetch the response. {e}")
-        print(response)
-        return
-    
+        return res
+      
     if isinstance(raw,list):
       for msg in raw:
         if isinstance(msg, AIMessage): 
