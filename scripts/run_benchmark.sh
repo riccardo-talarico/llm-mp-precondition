@@ -167,7 +167,7 @@ echo "Installing Python dependencies..."
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
   sudo apt-get install -y -q python3-venv &&
   python3 -m venv /home/${REMOTE_USER}/ollama-venv &&
-  /home/${REMOTE_USER}/ollama-venv/bin/pip install -q -r '${REMOTE_DIR}/runner/requirements.txt'
+  /home/${REMOTE_USER}/ollama-venv/bin/pip install -r '${REMOTE_DIR}/runner/requirements.txt'
 "
 
 # ── Pull models ────────────────────────────────────────────────────────────────
