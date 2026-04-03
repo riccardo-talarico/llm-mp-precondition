@@ -3,18 +3,10 @@ from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
-from langchain.messages import SystemMessage, AIMessage
-from langchain_classic.output_parsers import PydanticOutputParser, OutputFixingParser
-from ollama import ResponseError as OllamaResponseError
+from langchain.messages import SystemMessage
 
 import os, time, json
 from dotenv import load_dotenv
-from langchain_core.exceptions import OutputParserException
-from pydantic import ValidationError
-
-import ast
-from groq import BadRequestError
-
 
 from utils.prompts import *
 from utils.graph import *
@@ -26,18 +18,6 @@ from utils.results import extract_id, try_into_dataframe, get_usage_metadata, pr
 
 load_dotenv()
 
-
-
-def fix_escaped_quotes(text: str) -> str:
-    """
-    Replaces literal escaped single quotes (\') with normal single quotes (').
-    """
-    if not isinstance(text, str):
-        return text
-    return text.replace("\\'", "'")
-
-
-
 class ChainOfDebugAgent():
     def __init__(
             self, 
@@ -47,18 +27,22 @@ class ChainOfDebugAgent():
             debug_level: int = 0, 
             logging = True,
             ollama_cfg : None | OllamaExperimentConfig = None,
+            max_retries : int = 1
         ):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
         elif provider == 'Groq':
             api_key = os.getenv('GROQ_API_KEY')
-            self.llm = ChatGroq(model=model, groq_api_key=api_key, max_retries = 1)
+            self.llm = ChatGroq(model=model, groq_api_key=api_key, max_retries = max_retries)
         elif provider == 'Ollama':
             self.llm = ChatOllama(
             base_url=ollama_cfg.base_url,
             model=ollama_cfg.model,
             temperature=ollama_cfg.temperature,
-            model_kwargs={"seed": ollama_cfg.seed, **ollama_cfg.options}
+            num_ctx=ollama_cfg.options.get("num_ctx", 4096),
+            top_p=ollama_cfg.options.get("top_p", 0.9),
+            top_k=ollama_cfg.options.get("top_k", 40),
+            seed = ollama_cfg.seed,
         )
         else:
             self.llm = None
@@ -92,7 +76,9 @@ class ChainOfDebugAgent():
     
     def _trace_selector(self, state:State):
         list = state["trace_list"]
-        if len(list.traces)==0:
+        if list is None or len(list.traces)==0:
+            if self.debug_level > 0:
+                print("Empty list")
             return {"active_trace":None}
         else:
             if self.debug_level > 0:
@@ -247,7 +233,7 @@ class ChainOfDebugAgent():
                     time.sleep(10)
 
         self.last_run_time = time.time()-start
-        res = try_into_dataframe(classification_data, a.model)
+        res = try_into_dataframe(classification_data, self.model)
         try:
             with open("results/thinking_"+self.model+".json", "w") as f:
                 f.write(json.dumps(thinking_log, indent=4))
