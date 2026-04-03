@@ -1,15 +1,16 @@
 ollama_base_url: "http://ollama:11434"
 
-# using - xxx is for creating a list
-
 model: "llama3.1:8b"
 
-temperature: 0.7
+models: 
+  - "llama3.1:8b"
 
-seed: 1337
+temperature: 0.0
+
+seed: 42
 
 runs_per_case: 1
-max_retries: 1
+max_retries: 3
 request_timeout_sec: 180
 warmup: true
 set : "validation"
