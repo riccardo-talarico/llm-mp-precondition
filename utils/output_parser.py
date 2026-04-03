@@ -67,7 +67,7 @@ def try_removing_common_hallucinations(raw_bad_text, schema, execution_point: st
         clean = parser.parse(fix_common_hallucinations(raw_bad_text))
         return clean
     except Exception as e:
-        print(f"[{execution_point}]: Removing common hallucinations wasn't enough. Fallback to OutputFixingParser.\n {e}")
+        print(f"[{execution_point}]: Removing common hallucinations wasn't enough. Fallback to OutputFixingParser.\n Exception: {e}")
         return None
     
 
@@ -85,7 +85,7 @@ def try_with_output_fixing_parser(raw_bad_text, schema, fixing_llm, execution_po
         fixed_obj = fixing_parser.invoke(raw_bad_text)
         return fixed_obj
     except Exception as double_fault:
-        print(f"[{execution_point}]: Fixing parser ALSO failed on Groq error: {double_fault}")
+        print(f"[{execution_point}]: Fixing parser ALSO failed on error: {double_fault}")
         # Let it fall through to the generic abort logic
         return None
 
@@ -116,7 +116,7 @@ def try_to_invoke(llm, msg, structured_output_schema, fixing_llm = None, default
             return default_message
         
     except (OutputParserException, ValidationError, OllamaResponseError) as parse_err:
-        print(f"[{execution_point}]: Hard parse exception caught. Triggering fixing_parser...")
+        print(f"[{execution_point}]: Hard parse exception caught. Triggering fixing_parser... \nParse Error:{parse_err}")
         raw_bad_text = extract_raw_from_generic_exception(parse_err,execution_point)
         clean = try_removing_common_hallucinations(raw_bad_text, structured_output_schema, execution_point)
         if not clean and fixing_llm:
