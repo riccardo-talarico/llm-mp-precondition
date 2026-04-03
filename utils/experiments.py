@@ -17,7 +17,8 @@ def load_config(config_path: Path) -> OllamaExperimentConfig:
     with config_path.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
-    base = os.getenv("OLLAMA_BASE_URL", raw.get("ollama_base_url", "http://localhost:11434"))
+    cfg_url = raw.get("ollama_base_url")
+    base = os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434" or cfg_url
     return OllamaExperimentConfig(
         base_url=base.rstrip("/"),
         model=raw["model"],

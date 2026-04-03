@@ -12,7 +12,7 @@ def get_usage_metadata(response, msg_id:int = 0):
       try:
         raw = response['raw']
       except Exception as e:
-        res.append(f"Unable to fetch the response. {e}")
+        print(f"Unable to fetch the response. {e}")
         return res
       
     if isinstance(raw,list):
@@ -128,10 +128,10 @@ def extract_true_df(paths_file: str) -> pd.DataFrame:
         return x
     with open("benchmarks/configures/goker/blocking.json", "r") as f:
         items = json.load(f)
-        blocking = {k: add_class('blocking',items[k]) for k in ids if k in items}
+        blocking = {k: add_class('Blocking',items[k]) for k in ids if k in items}
     with open("benchmarks/configures/goker/nonblocking.json", "r") as f:
         items = json.load(f)
-        nonblocking = {k: add_class('nonblocking',items[k]) for k in ids if k in items}
+        nonblocking = {k: add_class('Nonblocking',items[k]) for k in ids if k in items}
     df = pd.DataFrame(blocking | nonblocking)
     return df.T
 
@@ -145,10 +145,12 @@ def print_results(file_name_results: str, paths_file :str):
         df_results[col] = df_results[col].astype(str)
 
     df = df_true.join(df_results, lsuffix='_true', rsuffix='_pred')
-
     y_true = df_true['cls'].str.strip()
-    y_pred = df_results['cls'].str.strip()
-
+    try:
+        y_pred = df_results['cls'].str.strip()
+    except:
+       y_pred = df_results['class'].str.strip()
+    
     f1 = f1_score(y_true, y_pred, average='weighted')
     acc = balanced_accuracy_score(y_true, y_pred)
     report = classification_report(y_true, y_pred, zero_division=0)
