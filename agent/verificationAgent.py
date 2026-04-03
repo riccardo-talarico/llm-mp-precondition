@@ -13,7 +13,7 @@ from utils.output_parser import try_to_invoke
 from utils.tool_analysis import log_tool_interactions
 from utils.prompts import SINGLE_PROMPT_DETECTION_AND_CLASSIFICATION
 from utils.experiments import OllamaExperimentConfig
-from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count
+from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count, print_results
 
 
 class VerificationAgent():
@@ -30,7 +30,10 @@ class VerificationAgent():
           base_url=ollama_cfg.base_url,
           model=ollama_cfg.model,
           temperature=ollama_cfg.temperature,
-          model_kwargs={"seed": ollama_cfg.seed, **ollama_cfg.options}
+          num_ctx=ollama_cfg.options.get("num_ctx", 4096),
+          top_p=ollama_cfg.options.get("top_p", 0.9),
+          top_k=ollama_cfg.options.get("top_k", 40),
+          seed = ollama_cfg.seed,
       )
     else:
       print("Other providers not currently supported")
@@ -61,7 +64,7 @@ class VerificationAgent():
         prog = f.read()
         messages = [sysMsg, HumanMessage(content=prog)]
         default_response = {
-          'class':'None','type': 'None', 'subtype': 'None'
+          'cls':'None','type': 'None', 'subtype': 'None'
         }
         response = try_to_invoke(self.structured_llm,messages,BugClassification,self.llm, default_response)
         try:
@@ -76,7 +79,7 @@ class VerificationAgent():
         except Exception as e:
           print(f"Cannot extract reasoning tokens: {e}")
 
-        classification_data[id]= response['parsed']
+        classification_data[id]= response['parsed'].get_classification()
         verified_prg+=1
         
         if save_usage_metadata:
@@ -112,7 +115,10 @@ if __name__=='__main__':
   stop = False
   while not stop:
     try:
-      df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)      
+      df = df.T
+      df.to_csv(f"results/test_{a.model}.csv", index=True) 
+      print(df.head()) 
+      print_results(f"results/test_{a.model}.csv",'benchmarks_paths/validation_set.txt')
       stop = True
     except Exception as e:
       stop = False
