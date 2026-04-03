@@ -89,8 +89,13 @@ ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
   fi
 
   # Crea cartella modelli sull'NVMe
+  #DEBUG:
+  systemctl status ollama
+
   sudo mkdir -p '${OLLAMA_MODELS_DIR}'
-  sudo chown -R \${USER}:\${USER} '${OLLAMA_MODELS_DIR}'
+  sudo chmod +x /opt /opt/dlami /opt/dlami/nvme
+  #sudo chown -R ${REMOTE_USER}:${REMOTE_USER} '${OLLAMA_MODELS_DIR}'
+  sudo chown -R ollama:ollama '${OLLAMA_MODELS_DIR}'
 
   # Configura Ollama per usare NVMe
   sudo mkdir -p /etc/systemd/system/ollama.service.d
@@ -171,6 +176,7 @@ ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
 "
 
 # ── Pull models ────────────────────────────────────────────────────────────────
+# Note: for this part of the script to work you must have yaml in your local pyhton environment
 MODELS_TO_PULL=()
 if [[ -n "${MODEL_OVERRIDE}" ]]; then
   MODELS_TO_PULL=("${MODEL_OVERRIDE}")
@@ -179,10 +185,23 @@ else
     MODELS_TO_PULL+=("${model}")
   done < <(python3 -c "
 import yaml, sys
-cfg = yaml.safe_load(open('${EFFECTIVE_CONFIG}'))
-for m in cfg.get('models', []):
-    print(m)
+try:
+    with open('${EFFECTIVE_CONFIG}') as f:
+        cfg = yaml.safe_load(f)
+    # Check if 'models' is a list, otherwise fallback to single 'model'
+    models = cfg.get('models', None)
+    if not isinstance(models, list):
+        models = [cfg.get('model')]
+    for m in models:
+        if m: print(m)
+except Exception as e:
+    pass
 ")
+fi
+
+# Debug: Check if we actually found anything
+if [ ${#MODELS_TO_PULL[@]} -eq 0 ]; then
+    echo "Warning: No models found in config. Check ${EFFECTIVE_CONFIG}"
 fi
 
 for model in "${MODELS_TO_PULL[@]}"; do
@@ -190,6 +209,9 @@ for model in "${MODELS_TO_PULL[@]}"; do
   ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
     "OLLAMA_MODELS='${OLLAMA_MODELS_DIR}' ollama pull '${model}'"
 done
+
+# DEBUG:
+#ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "ollama pull llama3.1:8b"
 
 # ── Run benchmark ──────────────────────────────────────────────────────────────
 echo "Running benchmark..."
@@ -207,6 +229,6 @@ echo "Benchmark complete."
 mkdir -p "${RESULTS_LOCAL_DIR}"
 echo "Downloading results to ${RESULTS_LOCAL_DIR}/ ..."
 scp "${SCP_OPTS[@]}" -r \
-  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/results/." \
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/results/*" \
   "${RESULTS_LOCAL_DIR}/"
 echo "Results saved to ${RESULTS_LOCAL_DIR}/
