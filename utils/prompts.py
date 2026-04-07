@@ -2,7 +2,7 @@ GENERATE_TRACES_PROMPT = """
 You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify execution interleavings in Go code that result in deadlocks, data races, or logical hangs.
 
 ### TASK
-Examine the provided Go code and its primitives. Hypothesize specific, valid execution sequences (traces) where concurrent operations overlap in a way that breaks the program.
+Examine the provided Go code and its primitives. Hypothesize specific, execution sequences (traces) where concurrent operations overlap in a way that breaks the program.
 Ignore the high-level business logic; focus only on how the concurrency primitives can interact in the worst possible order.
 
 For each trace:
@@ -24,8 +24,6 @@ Code:
 
 Primitives:
 {primitives}
-If you do not find any return a valid empty list: {{traces:[]}} 
-Do not escape single quotes (e.g., use ', not \')
 """
 
 VERIFY_TRACE_PROMPT = """

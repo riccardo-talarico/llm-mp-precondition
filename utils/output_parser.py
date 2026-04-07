@@ -102,6 +102,7 @@ def try_to_invoke(llm, msg, structured_output_schema, fixing_llm = None, default
 
     try:
         response = llm.invoke(msg)
+        print("Invocation succeeded")
         return response 
     except BadRequestError as groq_err:
         print(f"[{execution_point}]: Groq API rejected the tool call. Salvaging 'failed_generation'...")

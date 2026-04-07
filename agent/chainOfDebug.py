@@ -79,6 +79,8 @@ class ChainOfDebugAgent():
         if list is None or len(list.traces)==0:
             if self.debug_level > 0:
                 print("Empty list")
+            if list is None:
+                print("trace list is none")
             return {"active_trace":None}
         else:
             if self.debug_level > 0:
@@ -246,7 +248,7 @@ class ChainOfDebugAgent():
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant', json_mode=False, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='llama-3.3-70b-versatile', json_mode=False, debug_level=1)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
