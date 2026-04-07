@@ -5,6 +5,7 @@ import os, yaml, requests
 
 @dataclass
 class OllamaExperimentConfig:
+    models : list[str]
     base_url: str
     model: str
     temperature: float
@@ -20,6 +21,7 @@ def load_config(config_path: Path) -> OllamaExperimentConfig:
     cfg_url = raw.get("ollama_base_url")
     base = os.getenv("OLLAMA_BASE_URL") or "http://localhost:11434" or cfg_url
     return OllamaExperimentConfig(
+        models = raw['models'],
         base_url=base.rstrip("/"),
         model=raw["model"],
         temperature=raw.get("temperature", 0.0),

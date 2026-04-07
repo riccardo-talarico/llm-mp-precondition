@@ -231,4 +231,4 @@ echo "Downloading results to ${RESULTS_LOCAL_DIR}/ ..."
 scp "${SCP_OPTS[@]}" -r \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/results/*" \
   "${RESULTS_LOCAL_DIR}/"
-echo "Results saved to ${RESULTS_LOCAL_DIR}/
+echo "Results saved to ${RESULTS_LOCAL_DIR}/"
