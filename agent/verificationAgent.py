@@ -70,16 +70,18 @@ class VerificationAgent():
         try:
           print(f"{response['parsed']}")
           print(f"{response['raw']}")
+          classification_data[id]= response['parsed'].get_classification()
         except:
           print(response)
           response = {'parsed':response, 'raw':response}
+          classification_data[id] = response
         try:
           reasoning = response['raw'].additional_kwargs.get("reasoning_content")
           thinking_log[id] = reasoning
         except Exception as e:
           print(f"Cannot extract reasoning tokens: {e}")
 
-        classification_data[id]= response['parsed'].get_classification()
+        
         verified_prg+=1
         
         if save_usage_metadata:
