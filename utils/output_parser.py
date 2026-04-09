@@ -7,6 +7,15 @@ from groq import BadRequestError
 import re
 
 
+def try_extract_from_function_call(text:str):
+    try:
+        start = text.find(">")
+        corrected_text = text[start+1:-11]
+    except Exception as e:
+        print(f"Unable to extract function call: {e}")
+        return text
+    return corrected_text.strip()
+
 def fix_common_hallucinations(text:str) -> str:
     """
     The function removes common LLM hallucinations that break JSON parsers.
@@ -26,6 +35,9 @@ def fix_common_hallucinations(text:str) -> str:
     
     # 3. Fix Escaped Single Quotes (\' -> ')
     text = text.replace("\\'", "'")
+
+    if "<function=" in text:
+        text = try_extract_from_function_call(text)
     
     return text.strip()
 
@@ -131,3 +143,7 @@ def try_to_invoke(llm, msg, structured_output_schema, fixing_llm = None, default
     except Exception as e:
         print(f"[{execution_point}]: Fatal error, case not covered.\n{e}")
         return default_message
+
+if __name__=='__main__':
+    t=try_extract_from_function_call('<function=ConcurrencySections> {"sections": "[{\"primitives\": [\"select\"], \"scope\": \"monitor\"}, {\"primitives\": [\"i.writeLock\", \"sync.Mutex\"], \"scope\": \"WriteFrame\"}, {\"primitives\": [\"i.writeLock\", \"sync.Mutex\"], \"scope\": \"monitor\"}, {\"primitives\": [\"go\", \"goroutine\"], \"scope\": \"TestKubernetes6632\"}]"}</function>')
+    print(t)
