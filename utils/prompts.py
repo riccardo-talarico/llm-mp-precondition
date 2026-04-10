@@ -1,3 +1,78 @@
+IDENTIFY_SECTIONS_PROMPT = """
+You are a Go concurrency expert. Your goal is to identify "synchronization surfaces" in the go code.
+Meaning that you need to report about all the "concurrency interesting" sections of the code.
+For each section highlit the commands and the concurrency primitives involved. 
+
+Code:
+{code}
+
+Primitives:
+{primitives}
+"""
+
+
+UNDERSTAND_SECTION_PROMPT = """
+You are an expert Go programmer and explainer. Your goal is, given a go snippet of code and some highlighted 
+"concurrency section" to explain how it works; trying to identify invariants and lifecycle of the commands.
+
+Code:
+{code}
+
+Section:
+{section}
+"""
+
+GENERATE_TRACE_FROM_IDEA_PROMPT = """
+You are Concurrency Stress-Tester and Go Runtime Emulator. Your goal is, given an analysis of a go snippet of code and 
+an idea of a possible bug, to create a problematic trace for that bug.
+Describe the interleaving logic and generate a strict chronological timeline of actions (list of actions).
+Use the string: `G[N]: [Action]` for an action.
+Example:
+- G1: mu.Lock()
+- G2: mu.Lock() (blocked)
+- G1: ch <- val (blocked)
+
+Code: 
+{code}
+
+Idea:
+{trace_idea}
+"""
+
+
+
+CHECK_BALANCE_PROMPT = """
+You are a Go programming expert and concurrency emulator. Your goal is, given a snippet of go code and a list of primitives, to analyze
+the balancedness of the operation of the concurrency primitives:
+Check dual operations: for each channel where are the send and where are the receives? Are they balanced? Is the imbalance a problem?
+The same for mutexes (lock and unlock)
+Reason also on waitgroups, where are the add and waits? Are they balanced?
+
+Code:
+{code}
+
+Primitives:
+{primitives}
+"""
+
+GENERATE_TRACE_IDEAS_PROMPT = """
+You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify potential concurrency bugs in a go snippet of code.
+Provide a list of ideas of potential issues. There's no need to be 100% sure that each bug exists (that idea will be later analyzed to create a potential trace).
+Generate up to 5 ideas, no more.
+Code:
+{code}
+
+Use this analysis as a support:
+{sections}
+{understanding}
+{balanceanalysis}
+"""
+
+
+
+
+
+
 GENERATE_TRACES_PROMPT = """
 You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify execution interleavings in Go code that result in deadlocks, data races, or logical hangs.
 

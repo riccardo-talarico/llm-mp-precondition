@@ -21,14 +21,6 @@ class Trace(BaseModel):
     def get_json_template(cls):
         return """{"interleaving_logic": "string","sequence": [{"goroutine": "string", "action": "string"}]}"""
 
-class Traces(BaseModel):
-    traces: List[Trace] | None = Field(
-        validation_alias=AliasChoices("traces","Traces","trace_list"),
-        description = "list of objects of the class Trace"
-        )
-    @classmethod
-    def get_json_template(cls):
-        return """{"traces": [{"interleaving_logic": "string","sequence": [{"goroutine": "string", "action": "string"}]}]}"""
 
 class TraceEvaluation(BaseModel):
     reachable: bool = Field(validation_alias=AliasChoices("reachable", "Reachable", "reachability"), description="Just a True or False value regarding the possibility of the program to create this trace")
@@ -39,12 +31,13 @@ class TraceEvaluation(BaseModel):
 
 class BugClassification(BaseModel):
     reasoning: str = Field(description="Step-by-step analysis of the trace and code to identify the bug type.")
-    cls : Literal['Blocking', 'Nonblocking']
+    cls : Literal['Blocking', 'Nonblocking', 'None']
     type : Literal[
         # blocking:
         "Resource Deadlock", "Communication Deadlock", "Mixed Deadlock",
         # nonblocking:
-        "Traditional", "Go-Specific"
+        "Traditional", "Go-Specific",
+        'None'
         ]
     subtype : Literal[
         # blocking:
@@ -52,7 +45,8 @@ class BugClassification(BaseModel):
         "Channel", "Condition Variable", "Misuse WaitGroup", "Channel & Context", "Channel & Condition Variable",
         "Channel & Lock", "Channel & waitGroup",
         # nonblocking:
-        "Order violation", "Data race", "Misuse channel", "Anonymous function", "Testing library"
+        "Order violation", "Data race", "Misuse channel", "Anonymous function", "Testing library",
+        'None'
         ]
     def get_classification(self):
         return {'cls':self.cls, 'type':self.type, 'subtype':self.subtype}
@@ -66,15 +60,71 @@ class BugClassification(BaseModel):
     | Order violation | Data race | Misuse channel | Anonymous function | Testing library"
 }"""
 
+class ConcurrencySection(BaseModel):
+    primitives : List[str] = Field(
+        description = "List of primitives involved in the concurrency section" 
+    )
+    scope : str = Field(
+        description = "Brief description of the code/commands composing the section"
+    )
+
+# structured output for identify_sections node
+class ConcurrencySections(BaseModel):
+    sections: List[ConcurrencySection] = Field(
+        description = "Concurrency sections found in the code."
+    )
+
+class SectionExplanation(BaseModel):
+    section_objective : str = Field(
+        description = "The goal of the section; what it is being used for."
+    )
+    section_functioning : str = Field(
+        description = "Invariants that belong to the section and/or a lifecycle description."
+    )
+
+class BalanceReport(BaseModel):
+    problems : str = Field(
+        description = "Problems found during the analysis"
+    )
+    analysis: str = Field(
+        description = "Analysis of the operations of the concurrency primitives."
+    )
+
+class TraceIdeas(BaseModel):
+    ideas : List[str] = Field(
+        description = "List of possible bugs idea that will be develop into a problematic trace"
+    )
+
+
+class WorkerState(TypedDict):
+    code : str
+    section : ConcurrencySection
+    section_explanations : Annotated[List[str], add]
+    reasoning: Annotated[List[str], add]
+    early_stop : bool
+
+class TraceCreatorState(TypedDict):
+    code : str
+    trace_idea : str
+    trace_list : Annotated[List[Trace], add]
+    reasoning: Annotated[List[str], add]
+    early_stop : bool
+    #classification?
+
+
 class State(TypedDict):
     code : str
     early_stop: bool
     # Keeps a list of reasoning tokens, the field is not overwritten every time
     reasoning: Annotated[List[str], add]
     concurrency_primitives : str 
+    concurrency_sections : ConcurrencySections
+    section_explanations: Annotated[List[SectionExplanation], add]
+    balance_report : BalanceReport
+    trace_ideas : TraceIdeas | None
     classification : BugClassification | None
-    trace_list : Traces
-    active_trace : Trace | None 
+    trace_list : Annotated[List[Trace], add]
+    active_trace : Trace | None
     trace_eval : TraceEvaluation | None
 
 
@@ -91,10 +141,18 @@ def handle_early_exit(state_key : str):
                 return {'early_stop': True, 'classification':{'type':None,'subtype':None,'cls':None}}
             # Otherwise wrap the expected result in the corresponding key
             try:
-                reasoning = result['raw'].additional_kwargs.get("reasoning_content")
+                reasoning = [result['raw'].additional_kwargs.get("reasoning_content")]
             except Exception as e:
                 print(f"Cannot extract reasoning tokens: {e}")
-            return {state_key: result['parsed'], 'reasoning_log': [reasoning]}
+                reasoning = []
+
+            try:
+                state_update = result['parsed']
+            except Exception as e:
+                print(f"Exception during extraction of state update: {e}.\n Aborting the graph call")
+                return {'early_stop':True, 'classification':{'type':None,'subtype':None,'cls':None}}
+
+            return {state_key: state_update, 'reasoning': reasoning}
         return early_exit
     return decorator
 

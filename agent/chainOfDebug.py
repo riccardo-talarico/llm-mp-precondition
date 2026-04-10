@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import Send, Overwrite
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
@@ -60,14 +61,107 @@ class ChainOfDebugAgent():
         """The function describes the first node logic: 
         it runs a script to identify concurrency structures and functions using them"""        
         return {'concurrency_primitives': parse_go_concurrency(state['code'])}
+    
+
+    def _no_context_call(self, state : State, config: RunnableConfig, node_name : str, prompt:str, schema):
+        """
+        High order function to define a generic no_context node call.
+        The function incapsulate the prompt inside a SystemMessage and then passes it to a structured llm 
+        obtained with 'schema'.
+        """
+        if state['early_stop']:
+            return "ABORTED"
+
+        input = [SystemMessage(prompt)]
+        if schema is not None:
+            calling_llm = self.llm.with_structured_output(schema, method=self.structured_output_method, include_raw=True)
+        else:
+            calling_llm = self.llm
+        msg = try_to_invoke(calling_llm, input, schema, self.llm, execution_point=node_name)
+        return msg
+
+
+    @handle_early_exit('concurrency_sections')
+    def _identify_sections(self, state : State, config: RunnableConfig, node_name : str = None):
+        """
+        The function calls the LLM for the 'identify_concurrency_sections' node.
+        """
+        sysprompt = self.identify_sections_prompt.format(code=state['code'], primitives=state['concurrency_primitives'])
+        return self._no_context_call(state, config, node_name, sysprompt, schema=ConcurrencySections)
+    
+    @handle_early_exit("section_explanations")
+    def _understand_section(self, state : WorkerState, config : RunnableConfig, node_name : str = None):
+        """
+        The function calls the llm for the 'understand_section' node.
+        """
+        sysprompt = self.understand_section_prompt.format(code=state['code'], section=state['section'])
+        answer = self._no_context_call(state, config, node_name, sysprompt, schema=None)
+        if answer == "ABORTED":
+            return answer
+        dict = {'parsed':[answer.content], 'raw':answer}
+        return dict
+
+    
+    @handle_early_exit('balance_report')
+    def _check_balancedness(self, state : State, config : RunnableConfig, node_name : str = None):
+        """
+        The function calls the llm for the 'check_balancedness' node.
+        """
+        sysprompt = self.check_balance_prompt.format(code=state['code'], primitives=state['concurrency_primitives'])
+        return self._no_context_call(state, config, node_name, sysprompt, schema=BalanceReport)
+    
+    def _assign_workers(self, state : State, config: RunnableConfig, node_name : str = None):
+        """
+        The function assign to each LLM worker a concurrency section to analyze.
+        """
+        if state['early_stop']:
+            return []
+        return [Send("understand_section", {"code":state['code'],"section":s, "early_stop":state['early_stop']}) for s in state['concurrency_sections']]
+
+
+    @handle_early_exit("trace_ideas")
+    def _orchestrate_traces(self, state: State, config:RunnableConfig, node_name:str = None):
+        """
+        The function calls the LLM for the 'trace_orchestrator' node.
+        Effectively creating another orchestrator-workers workflow to handle the trace creations.
+        """
+        sysprompt = self.generate_trace_ideas_prompt.format(code=state['code'],sections=state['concurrency_sections'], understanding=state['section_explanations'], balanceanalysis=state['balance_report'])
+        return self._no_context_call(state,config,node_name,sysprompt, schema=TraceIdeas)
+
+    def _assign_trace_creators(self, state: State, config:RunnableConfig, node_name:str = None):
+        """
+        The function assigns to each LLM worker a concurrent possible trace idea to develop.
+        """
+        if state['early_stop']:
+            return []
+        if self.debug_level > 0:
+            print(f"Trace ideas: {len(state['trace_ideas'].ideas)}")
+        if len(state['trace_ideas'].ideas) > 5:
+            state['trace_ideas'].ideas = state['trace_ideas'].ideas[:5]
+            print(f"Trace ideas reduced to {state['trace_ideas']}")
+        return [Send("generate_trace", {'code':state['code'],'trace_idea':idea, 'early_stop':state['early_stop']}) for idea in state['trace_ideas'].ideas]
+
+    @handle_early_exit("trace_list")
+    def _generate_trace(self, state : TraceCreatorState, config:RunnableConfig, node_name:str = None):
+        """
+        The function calls the LLM for the 'generate_trace' node.
+        """
+        sysprompt = self.generate_trace_from_idea_prompt.format(code=state['code'],trace_idea = state['trace_idea'])
+        answer = self._no_context_call(state, config, node_name, sysprompt, schema=Trace)
+        try:
+            answer['parsed'] = [answer['parsed']]
+        except:
+            print(answer)
+        return answer
+
 
     @handle_early_exit("trace_list")  
     def _generate_traces(self, state: State, config: RunnableConfig, node_name: str = None):
-        """The function implements the logic of the generate_trace node:
+        """
+        The function implements the logic of the 'generate_traces' node:
         it asks the llm to generate a list of problematic traces, 
-        given the concurrency primitives identified."""
-        
-        
+        given the concurrency primitives identified.
+        """
         sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"],code=state['code'])
         input = [SystemMessage(sysprompt)]
         structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method, include_raw=True)
@@ -76,20 +170,20 @@ class ChainOfDebugAgent():
     
     def _trace_selector(self, state:State):
         list = state["trace_list"]
-        if list is None or len(list.traces)==0:
+        if list is None or len(list)==0:
             if self.debug_level > 0:
                 print("Empty list")
-            if list is None:
-                print("trace list is none")
+                if list is None:
+                    print("trace list is none")
             return {"active_trace":None}
         else:
             if self.debug_level > 0:
-                print(f"Remaining traces: {len(list.traces)}")
-            active_trace = list.traces[0]
-            list.traces = list.traces[1:]
+                print(f"Remaining traces: {len(list)}")
+            active_trace = list[0]
+            list = list[1:]
             return {
                 "active_trace": active_trace, 
-                "trace_list": list 
+                "trace_list": Overwrite(list) # because the reducer 'add' is used for the list
                 }
         
     def _check_if_trace_list_is_empty(self, state:State):
@@ -142,6 +236,7 @@ class ChainOfDebugAgent():
         return "STOP" if state["early_stop"] else "NO STOP"
 
     def compile_chain(self, save_img=False):
+
         """The function compiles the chain, making the agent ready to be invoked."""
         if self.compiled:
             print("WARNING: you are recompiling an already compiled graph. It will be reinitialized")
@@ -149,7 +244,11 @@ class ChainOfDebugAgent():
         
         # Adding the nodes in the graph
         self.graph.add_node("get_concurrency_primitives",self._get_concurrency_primitives)
-        self.graph.add_node("generate_traces",self._generate_traces)
+        self.graph.add_node("identify_sections", self._identify_sections)
+        self.graph.add_node("understand_section", self._understand_section)
+        self.graph.add_node("check_balance", self._check_balancedness)
+        self.graph.add_node("trace_orchestrator", self._orchestrate_traces)
+        self.graph.add_node("generate_trace",self._generate_trace)
         self.graph.add_node("trace_selector", self._trace_selector)
         self.graph.add_node("check_trace",self._ask_if_trace_is_possible)
         self.graph.add_node("create_classification", self._create_classification)
@@ -157,11 +256,18 @@ class ChainOfDebugAgent():
 
         # Connecting edges
         self.graph.add_edge(START, "get_concurrency_primitives")
+        self.graph.add_edge("get_concurrency_primitives", "identify_sections")
         self.graph.add_conditional_edges(
-            "get_concurrency_primitives", self._early_termination, {"STOP": END, "NO STOP": "generate_traces"})
-        self.graph.add_conditional_edges(
-            "generate_traces", self._early_termination, {"STOP": END, "NO STOP": "trace_selector"}
+            "identify_sections", self._assign_workers, ["understand_section"]
         )
+        self.graph.add_edge("understand_section","check_balance")
+        self.graph.add_edge("check_balance", "trace_orchestrator")
+        self.graph.add_conditional_edges(
+            "trace_orchestrator", self._assign_trace_creators, ["generate_trace"]
+        )
+        # TODO: maybe an intermediate node is needed for synchronization?
+        # something between generate_trace and trace_selector
+        self.graph.add_edge("generate_trace","trace_selector")
         self.graph.add_conditional_edges(
             "trace_selector", self._check_if_trace_list_is_empty, {"EMPTY": "empty_classification", "NOT EMPTY": "check_trace"}
         )
@@ -188,6 +294,11 @@ class ChainOfDebugAgent():
         return response
     
     def load_prompts(self):
+        self.generate_trace_from_idea_prompt = GENERATE_TRACE_FROM_IDEA_PROMPT
+        self.identify_sections_prompt = IDENTIFY_SECTIONS_PROMPT
+        self.understand_section_prompt = UNDERSTAND_SECTION_PROMPT
+        self.check_balance_prompt = CHECK_BALANCE_PROMPT
+        self.generate_trace_ideas_prompt = GENERATE_TRACE_IDEAS_PROMPT
         self.generate_list_of_traces_prompt = GENERATE_TRACES_PROMPT
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
@@ -230,6 +341,8 @@ class ChainOfDebugAgent():
                     self.usage_metadata += get_usage_metadata(response, verified_prg-1)
 
                 print(f"Progress: {verified_prg}/{len(prg_paths)}")
+                #TODO: DEBUG:
+                break
                 if insert_sleep:
                     print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
                     time.sleep(10)
@@ -248,9 +361,10 @@ class ChainOfDebugAgent():
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.3-70b-versatile', json_mode=False, debug_level=1)
+    a = ChainOfDebugAgent(provider='Groq', model='moonshotai/kimi-k2-instruct', json_mode=False, debug_level=2)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
+    print("Starting")
     df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
     print_token_count(a.usage_metadata)
     print(f"Time required:{a.last_run_time}")
