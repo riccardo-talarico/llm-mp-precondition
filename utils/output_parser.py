@@ -124,7 +124,7 @@ def try_to_invoke(llm, msg, structured_output_schema, fixing_llm = None, default
             clean = try_with_output_fixing_parser(raw_bad_text,structured_output_schema,fixing_llm,execution_point)
         if clean is not None:
             print(f"Returning fix from output parser.")
-            return clean
+            return {'parsed':clean, 'raw':clean}
         else:
             return default_message
         
@@ -135,7 +135,7 @@ def try_to_invoke(llm, msg, structured_output_schema, fixing_llm = None, default
         if not clean and fixing_llm:
             clean = try_with_output_fixing_parser(raw_bad_text,structured_output_schema,fixing_llm,execution_point)
         if clean is not None:
-            return clean
+            return {'parsed':clean, 'raw':clean}
         else:
             return default_message
         
