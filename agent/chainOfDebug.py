@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
-from langchain.messages import SystemMessage
+from langchain.messages import SystemMessage, HumanMessage
 
 import os, time, json
 from dotenv import load_dotenv
@@ -24,11 +24,12 @@ class ChainOfDebugAgent():
             self, 
             provider : str, 
             model : str, 
-            json_mode=False, 
+            struct_output_method='json_schema', 
             debug_level: int = 0, 
             logging = True,
             ollama_cfg : None | OllamaExperimentConfig = None,
-            max_retries : int = 1
+            max_retries : int = 1,
+            insert_sleep: bool = False
         ):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
@@ -49,11 +50,12 @@ class ChainOfDebugAgent():
             self.llm = None
         self.graph = StateGraph(State)
         self.compiled = False
-        self.structured_output_method = "json_mode" if json_mode else "function_calling" 
+        self.structured_output_method = struct_output_method
         self.load_prompts()
         self.debug_level = debug_level
         self.logging = logging
         self.model = model
+        self.insert_sleep = insert_sleep
         self.last_run_time = -1
         self.usage_metadata = []
             
@@ -71,13 +73,21 @@ class ChainOfDebugAgent():
         """
         if state['early_stop']:
             return "ABORTED"
+        if self.insert_sleep:
+            time.sleep(15)
 
         input = [SystemMessage(prompt)]
         if schema is not None:
             calling_llm = self.llm.with_structured_output(schema, method=self.structured_output_method, include_raw=True)
+            if self.structured_output_method == 'json_mode':
+                input += [HumanMessage(f"IMPORTANT: You must return a JSON object. "
+            f"You MUST use exactly this template: {schema.model_json_schema()}. "
+            "Do not include any other text or explanation.")]
         else:
             calling_llm = self.llm
         msg = try_to_invoke(calling_llm, input, schema, self.llm, execution_point=node_name)
+        if self.debug_level > 2:
+            print(msg)
         return msg
 
 
@@ -95,11 +105,12 @@ class ChainOfDebugAgent():
         The function calls the llm for the 'understand_section' node.
         """
         sysprompt = self.understand_section_prompt.format(code=state['code'], section=state['section'])
-        answer = self._no_context_call(state, config, node_name, sysprompt, schema=None)
-        if answer == "ABORTED":
-            return answer
-        dict = {'parsed':[answer.content], 'raw':answer}
-        return dict
+        answer = self._no_context_call(state, config, node_name, sysprompt, schema=SectionExplanation)
+        try:
+            answer['parsed'] = [answer['parsed']]
+        except:
+            print(answer)
+        return answer
 
     
     @handle_early_exit('balance_report')
@@ -114,7 +125,8 @@ class ChainOfDebugAgent():
         """
         The function assign to each LLM worker a concurrency section to analyze.
         """
-        if state['early_stop']:
+        if state['early_stop'] or not state['concurrency_sections']:
+            state['early_stop'] = True
             return []
         return [Send("understand_section", {"code":state['code'],"section":s, "early_stop":state['early_stop']}) for s in state['concurrency_sections']]
 
@@ -132,7 +144,7 @@ class ChainOfDebugAgent():
         """
         The function assigns to each LLM worker a concurrent possible trace idea to develop.
         """
-        if state['early_stop']:
+        if state['early_stop'] or state['trace_ideas'] is None:
             return []
         if self.debug_level > 0:
             print(f"Trace ideas: {len(state['trace_ideas'].ideas)}")
@@ -303,7 +315,7 @@ class ChainOfDebugAgent():
         self.verify_trace_prompt = VERIFY_TRACE_PROMPT
         self.classification_prompt = CLASSIFICATION_PROMPT
 
-    def run_on_benchmark(self, paths_file : str, save_usage_metadata:bool=True, insert_sleep:bool=True):
+    def run_on_benchmark(self, paths_file : str, save_usage_metadata:bool=True):
         """The function runs the chain agent on all the programs specified by 'paths_file'.
         This must be a file containing all the paths to the go codes it is intended to analyze."""
         try:
@@ -326,13 +338,13 @@ class ChainOfDebugAgent():
                 print(f"Id: {id}")
                 prog = f.read()
                 response = self.invoke_chain(prog)
-                if isinstance(response['classification'],dict):
+
+                try:
+                    classification_data[id] = response['classification'].get_classification()
+                except Exception as e:
+                    print(f"Could not convert response into dictionary: {e}")
                     classification_data[id] = response['classification']
-                else:
-                    try:
-                        classification_data[id] = response['classification'].get_classification()
-                    except Exception as e:
-                        print(f"Could not convert response into dictionary: {e}")
+                    
                 thinking_log[id] = response['reasoning']
                 print(f"{response['classification']}")
                 verified_prg+=1
@@ -341,11 +353,10 @@ class ChainOfDebugAgent():
                     self.usage_metadata += get_usage_metadata(response, verified_prg-1)
 
                 print(f"Progress: {verified_prg}/{len(prg_paths)}")
-                #TODO: DEBUG:
-                break
-                if insert_sleep:
+                
+                if self.insert_sleep:
                     print("-"*20+" Sleep inserted to avoid consuming all tokens "+"-"*20)
-                    time.sleep(10)
+                    time.sleep(15)
 
         self.last_run_time = time.time()-start
         res = try_into_dataframe(classification_data, self.model)
@@ -360,8 +371,9 @@ class ChainOfDebugAgent():
 # moonshotai/kimi-k2-instruct, llama-3.1-8b-instant
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
+# openai/gpt-oss-120b
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='moonshotai/kimi-k2-instruct', json_mode=False, debug_level=2)
+    a = ChainOfDebugAgent(provider='Groq', model='meta-llama/llama-4-scout-17b-16e-instruct',debug_level=2, insert_sleep=True)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     print("Starting")

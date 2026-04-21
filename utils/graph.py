@@ -19,15 +19,15 @@ class Trace(BaseModel):
         )
     @classmethod
     def get_json_template(cls):
-        return """{"interleaving_logic": "string","sequence": [{"goroutine": "string", "action": "string"}]}"""
+        return """{"interleaving_logic": "string","sequence": ["string"]}"""
 
 
 class TraceEvaluation(BaseModel):
-    reachable: bool = Field(validation_alias=AliasChoices("reachable", "Reachable", "reachability"), description="Just a True or False value regarding the possibility of the program to create this trace")
+    reachable: bool = Field(validation_alias=AliasChoices("reachable", "Reachable", "reachability"), description="Just a true or false value regarding the possibility of the program to create this trace")
     explanation: str = Field(validation_alias=AliasChoices("explanation", "Explanation", "motivation"))
     @classmethod
     def get_json_template(cls):
-        return """{"reachable": true | false,"explanation": "string"}"""
+        return """{"reachable": "true | false","explanation": "string"}"""
 
 class BugClassification(BaseModel):
     reasoning: str = Field(description="Step-by-step analysis of the trace and code to identify the bug type.")
@@ -65,14 +65,24 @@ class ConcurrencySection(BaseModel):
         description = "List of primitives involved in the concurrency section" 
     )
     scope : str = Field(
-        description = "Brief description of the code/commands composing the section"
+        description = "Brief description of the commands/code location composing the section"
     )
+    @classmethod
+    def get_json_template(cls):
+        return """{"primitives":["string"],"scope":"string"}"""
+    
 
 # structured output for identify_sections node
 class ConcurrencySections(BaseModel):
     sections: List[ConcurrencySection] = Field(
         description = "Concurrency sections found in the code."
     )
+    @classmethod
+    def get_json_template(cls):
+        return """{
+        "sections": {"primitives":["string"],"scope":"string"}
+        }
+"""
 
 class SectionExplanation(BaseModel):
     section_objective : str = Field(
@@ -81,35 +91,73 @@ class SectionExplanation(BaseModel):
     section_functioning : str = Field(
         description = "Invariants that belong to the section and/or a lifecycle description."
     )
+    @classmethod
+    def get_json_template(cls):
+        return """{
+        "section_objective":"string", "section_functioning":"string"
+        }"""
 
 class BalanceReport(BaseModel):
-    problems : str = Field(
-        description = "Problems found during the analysis"
+    has_issues: bool = Field(
+        description="True if any imbalance or potential issue is detected"
     )
-    analysis: str = Field(
-        description = "Analysis of the operations of the concurrency primitives."
+    problems: list[str] = Field(
+        description="List of concise problem descriptions. Empty if none."
     )
+    summary: str = Field(
+        description="Short overall assessment (max 25 words)"
+    )
+    @classmethod
+    def get_json_template(cls):
+        return """{
+        "has_issues":"true | false", "problems":["string"], "summary":"string"
+        }"""
+
+class BugIdea(BaseModel):
+    type: str = Field(
+        description="Type of issue (e.g., deadlock, race_condition, goroutine_leak, waitgroup_misuse)"
+    )
+    description: str = Field(
+        description="Short explanation of the potential issue (max 20 words)"
+    )
+    location: str = Field(
+        description="Reference to the relevant section or code region"
+    )
+    support_info: list[str] = Field(
+        description="Up to 2 short facts extracted from the analysis provided in the prompt supporting the idea"
+    )
+    @classmethod
+    def get_json_template(cls):
+        return """{
+        "type":"string","description":"string","location":"string","support_info":"string"
+        }
+        """
 
 class TraceIdeas(BaseModel):
-    ideas : List[str] = Field(
-        description = "List of possible bugs idea that will be develop into a problematic trace"
+    ideas : List[BugIdea] = Field(
+        description = "List of possible bugs idea that will be developed into problematic traces"
     )
+    @classmethod
+    def get_json_template(cls):
+        return """{
+        "ideas":[{"type":"string","description":"string","location":"string","support_info":"string"}]
+        }"""
 
 
 class WorkerState(TypedDict):
     code : str
     section : ConcurrencySection
-    section_explanations : Annotated[List[str], add]
+    section_explanations : Annotated[List[SectionExplanation], add]
     reasoning: Annotated[List[str], add]
     early_stop : bool
 
 class TraceCreatorState(TypedDict):
     code : str
-    trace_idea : str
+    trace_idea : BugIdea
     trace_list : Annotated[List[Trace], add]
     reasoning: Annotated[List[str], add]
     early_stop : bool
-    #classification?
+    #TODO: insert here classification?
 
 
 class State(TypedDict):
@@ -168,3 +216,4 @@ def get_universal_template(model_cls):
 
 if __name__ == '__main__':
     print(TraceEvaluation.model_json_schema())
+    print(ConcurrencySections.model_json_schema())
