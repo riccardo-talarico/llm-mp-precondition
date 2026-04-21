@@ -1,25 +1,48 @@
 IDENTIFY_SECTIONS_PROMPT = """
-You are a Go concurrency expert. Your goal is to identify "synchronization surfaces" in the go code.
-Meaning that you need to report about all the "concurrency interesting" sections of the code.
-For each section highlit the commands and the concurrency primitives involved. 
+You are a Concurrency Architect and Static Analysis expert. 
+Your goal is to map the Synchronization Surfaces of a Go program. 
+A synchronization surface is any point where the execution of one goroutine depends on, or influences, the state of another.
 
 Code:
 {code}
 
+Here there is a list of the concurrency primitives used in the code.
 Primitives:
 {primitives}
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 
 UNDERSTAND_SECTION_PROMPT = """
-You are an expert Go programmer and explainer. Your goal is, given a go snippet of code and some highlighted 
-"concurrency section" to explain how it works; trying to identify invariants and lifecycle of the commands.
+You are a Senior Concurrency Architect. 
+Your task is to reverse-engineer a specific "Concurrency Section" to understand its architectural intent and operational guarantees.
 
-Code:
+Full snippet of code:
 {code}
 
-Section:
+Target Section:
 {section}
+
+1. Functional Intent (The "Why"):
+Define the high-level goal of this section. Is it a Worker Pool, a Fan-In aggregator, a Circuit Breaker, a Resource Gatekeeper, or a Lazy Initializer? 
+Explain what problem this specific arrangement of primitives is trying to solve.
+
+2. Functioning (The "How"):
+Trace the lifecycle of the state within this section:
+Activation: What triggers the concurrency? (e.g., a method call, a channel signal, or an init).
+Orchestration: How do the goroutines coordinate? Describe the "Handshake" between the primitives.
+Termination: How does this section reach a quiet state? Identify the cleanup mechanism (e.g., context cancellation, channel closing, or WaitGroup.Wait).
+
+Possibly including Structural Invariants & Properties:
+The "laws" that must remain true for this code to be safe. Examples include:
+
+Ownership: Which goroutine "owns" the channel or the data?
+Cardinality Invariants: (e.g., "Exactly one writer, multiple readers" or "The number of active workers never exceeds the channel buffer").
+Blocking Guarantees: Is the section designed to be non-blocking for the caller, or is it a synchronous "Wait-until-done" pattern?
+Re-entrancy: Can this section be safely executed multiple times concurrently?
+
+Constraint: Focus on the structural logic. If the business logic is "calculating taxes," ignore the math and focus on how the "tax calculation workers" are managed.
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 GENERATE_TRACE_FROM_IDEA_PROMPT = """
@@ -37,14 +60,17 @@ Code:
 
 Idea:
 {trace_idea}
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 
 
 CHECK_BALANCE_PROMPT = """
-You are a Go programming expert and concurrency emulator. Your goal is, given a snippet of go code and a list of primitives, to analyze
-the balancedness of the operation of the concurrency primitives:
-Check dual operations: for each channel where are the send and where are the receives? Are they balanced? Is the imbalance a problem?
+You are a Go programming expert and concurrency auditor.
+TASK:
+Analyze the usage of Go concurrency primitives in the provided code and detect potential imbalances.
+Check dual operations: for each channel where are the send and where are the receives? Are they balanced? 
+Coudl they be unbalanced in some execution paths? Is the imbalance a problem?
 The same for mutexes (lock and unlock)
 Reason also on waitgroups, where are the add and waits? Are they balanced?
 
@@ -53,12 +79,32 @@ Code:
 
 Primitives:
 {primitives}
+
+CONSTRAINTS:
+- Identify mismatches between:
+  - channel sends and receives
+  - mutex locks and unlocks
+  - waitgroup adds and waits
+- Consider possible execution paths, (including possible ways in which select statements could ruin the balance)
+- Report only concrete issues or potential imbalances
+- Each problem must be a short sentence (max 15 words)
+- If no issues are found:
+  - has_issues = false
+  - problems = empty list
+- Do not include explanations outside the JSON
+- Do not infer primitives not listed in the input
+
+STEPS:
+1. Identify all occurrences of each primitive in the code
+2. Count relevant operations (send/receive, lock/unlock, add/wait)
+3. Evaluate balance across possible execution paths
+4. Report results per primitive
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 GENERATE_TRACE_IDEAS_PROMPT = """
 You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify potential concurrency bugs in a go snippet of code.
-Provide a list of ideas of potential issues. There's no need to be 100% sure that each bug exists (that idea will be later analyzed to create a potential trace).
-Generate up to 5 ideas, no more.
+Provide a list of ideas of potential issues.
 Code:
 {code}
 
@@ -66,11 +112,24 @@ Use this analysis as a support:
 {sections}
 {understanding}
 {balanceanalysis}
+
+CONSTRAINTS:
+- Generate at most 5 ideas
+- Each idea must describe a plausible concurrency issue, even if uncertain
+- Base ideas only on the provided inputs
+- Prioritize sections and the "balance" analysis when identifying issues
+- description must be max 20 words
+- location must reference a relevant section
+- Do not repeat the same issue type for the same location
+- Do not include explanations outside the structured output
+
+STEPS:
+1. Review sections to locate concurrency interactions
+2. Use understanding to interpret behavior
+3. Use balanceanalysis to detect imbalance-related risks
+4. Generate diverse potential issues
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
-
-
-
-
 
 
 GENERATE_TRACES_PROMPT = """
@@ -118,6 +177,7 @@ Code:
 Trace:
 {trace}
 Do not escape single quotes (e.g., use ', not \')
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 CLASSIFICATION_PROMPT = """You are a Go Concurrency Expert and Bug classificator. You are given Go snippets of codes and an identified problematic trace that causes a bug
@@ -158,6 +218,7 @@ Logic Steps:
 Code: 
 {code}
 Trace: {trace}, trace eval: {trace_eval}
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """
 
 
@@ -189,5 +250,6 @@ but executes before Goroutine G2 has completed the necessary work (e.g., accessi
 2.2.2 Misuse channel: Issues like setting a channel to nil while other goroutines are communicating on it, which can trigger data races.
 2.2.3 Testing Library: Bug caused by the misuse of the Testing library of Go.
 Assume Partial Context: If the snippet is missing a main function, assume the provided functions are called in a way that triggers the concurrency logic shown.
-If no bug is found then insert None in all the fields. Follow the JSON structure provided'
+If no bug is found then insert None in all the fields.
+You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
 """ 
