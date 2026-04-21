@@ -72,8 +72,8 @@ def get_token_count(usage_metadata):
             output_tokens += usage.get("completion_tokens", 0)
       except Exception as e:
         print(f"Error during extraction of token count: {e}")
-        return -1,-1
-    return input_tokens,output_tokens
+        return (-1,-1)
+    return (input_tokens,output_tokens)
 
 def print_token_count(usage_metadata):
     """The function prints the input, output and total tokens usage extracted from the 'usage_metadata'.
@@ -90,9 +90,11 @@ def hierarchical_accuracy(df):
     score = 0.0
 
     for _, row in df.iterrows():
+        #print(f"True:{row['cls_true']}")
+        #print(f"Pred:{row['cls_pred']}")
         if row['cls_true'] == row['cls_pred']:
-            if row["type_true"] == row["type_pred"]:
-                if row["subtype_true"] == row["subtype_pred"]:
+            if row["type_true"].lower() == row["type_pred"].lower():
+                if row["subtype_true"].lower() == row["subtype_pred"].lower():
                     score += 1.0
                 else:
                     score += (2/3)
@@ -143,7 +145,8 @@ def print_results(file_name_results: str, paths_file :str):
     for col in df_results.columns:
         df_results[col] = df_results[col].fillna('None')
         df_results[col] = df_results[col].astype(str)
-
+    
+    df_results.index = df_true.index
     df = df_true.join(df_results, lsuffix='_true', rsuffix='_pred')
     y_true = df_true['cls'].str.strip()
     try:
@@ -184,7 +187,9 @@ if __name__ == '__main__':
         print(f"Invalid set name {set}, must contain validation or set")
         exit(1)
     df=extract_true_df(paths_file)
-    print_results(f"results/benchmark_results_{model_name}.csv", paths_file)
+    print_results(f"results/chain_llama3.1:8b_2026-04-21_08-01-36.csv", paths_file)
+    print_results(f"results/no_chain_llama3.1:8b_2026-04-21_08-16-07.csv", paths_file)
+
 
  
 
