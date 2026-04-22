@@ -58,7 +58,7 @@ def get_token_count(usage_metadata):
     """The function tries to fetch the 'usage_metadata' to extract the input and output tokens and returns them.
     In case the extraction fails it returns (-1,-1)."""
     if usage_metadata == []:
-      return (-1,-1)
+      return (0,0)
     input_tokens,output_tokens = 0,0
     for id,metadata in usage_metadata:
       try:
@@ -72,7 +72,7 @@ def get_token_count(usage_metadata):
             output_tokens += usage.get("completion_tokens", 0)
       except Exception as e:
         print(f"Error during extraction of token count: {e}")
-        return (-1,-1)
+        return (0,0)
     return (input_tokens,output_tokens)
 
 def print_token_count(usage_metadata):

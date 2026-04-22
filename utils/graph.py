@@ -1,10 +1,10 @@
 from langgraph.graph import StateGraph
-from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig
 from functools import wraps
-from typing_extensions import TypedDict, Literal, List, Annotated
+from typing_extensions import TypedDict, Literal, List, Annotated, Tuple
 from operator import add
 from pydantic import BaseModel, Field, AliasChoices
+from utils.results import get_token_count
 from IPython.display import Image
 
 
@@ -160,9 +160,22 @@ class TraceCreatorState(TypedDict):
     #TODO: insert here classification?
 
 
+
+def sum_tuple_elements(existing: Tuple[int, int] | None, new: Tuple[int, int]) -> Tuple[int, int]:
+    """
+    Custom reducer to sum two tuples elementwise.
+    Handle cases where existing might be None (initial state).
+    """
+    if existing is None or len(existing)!=2:
+        return new
+    return (existing[0] + new[0], existing[1] + new[1])
+
+
+
 class State(TypedDict):
     code : str
     early_stop: bool
+    tokens: Annotated[Tuple[int,int], sum_tuple_elements]
     # Keeps a list of reasoning tokens, the field is not overwritten every time
     reasoning: Annotated[List[str], add]
     concurrency_primitives : str 
@@ -190,17 +203,18 @@ def handle_early_exit(state_key : str):
             # Otherwise wrap the expected result in the corresponding key
             try:
                 reasoning = [result['raw'].additional_kwargs.get("reasoning_content")]
+                response_metadata = result['raw'].response_metadata
             except Exception as e:
-                print(f"Cannot extract reasoning tokens: {e}")
+                print(f"Cannot extract reasoning tokens nor response_metadata: {e}")
                 reasoning = []
-
+                response_metadata = []
             try:
                 state_update = result['parsed']
+                input_tokens, output_tokens = get_token_count([(0,response_metadata)])
             except Exception as e:
                 print(f"Exception during extraction of state update: {e}.\n Aborting the graph call")
                 return {'early_stop':True, 'classification':{'type':None,'subtype':None,'cls':None}}
-
-            return {state_key: state_update, 'reasoning': reasoning}
+            return {state_key: state_update, 'reasoning': reasoning, 'tokens': (input_tokens,output_tokens)}
         return early_exit
     return decorator
 
