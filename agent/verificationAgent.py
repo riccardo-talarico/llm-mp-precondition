@@ -74,7 +74,7 @@ class VerificationAgent():
         except:
           print(response)
           response = {'parsed':response, 'raw':response}
-          classification_data[id] = response
+          classification_data[id] = response['parsed']
         try:
           reasoning = response['raw'].additional_kwargs.get("reasoning_content")
           thinking_log[id] = reasoning
