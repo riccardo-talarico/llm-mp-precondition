@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+[[ "${DEBUG:-0}" == "1" ]] && set -x
 
 # ── Required ───────────────────────────────────────────────────────────────────
 INSTANCE_ID="${INSTANCE_ID:-i-00df26dabf73bd992}"
@@ -101,7 +102,7 @@ ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" "
   sudo mkdir -p /etc/systemd/system/ollama.service.d
   sudo tee /etc/systemd/system/ollama.service.d/override.conf <<EOF
 [Service]
-Environment=\"OLLAMA_MODELS=${OLLAMA_MODELS_DIR}\"
+Environment=\"OLLAMA_MODELS=${OLLAMA_MODELS_DIR}\" \"OLLAMA_NUM_PARALLEL=1\"
 EOF
 
   # Riavvia Ollama con la nuova configurazione
@@ -153,10 +154,10 @@ scp "${SCP_OPTS[@]}" -r runner\
 scp "${SCP_OPTS[@]}" -r agent\
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
 
-# Benchmarks
-scp "${SCP_OPTS[@]}" -r benchmarks \
-  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
-
+## Benchmarks
+#scp "${SCP_OPTS[@]}" -r benchmarks \
+#  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+#
 # Benchmark paths
 scp "${SCP_OPTS[@]}" -r benchmarks_paths \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
@@ -222,7 +223,7 @@ ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
    OLLAMA_MODELS='${OLLAMA_MODELS_DIR}' \
    CONFIG_PATH='${REMOTE_DIR}/config/experiment.yaml' \
    RESULTS_DIR='${REMOTE_DIR}/results' \
-   /home/${REMOTE_USER}/ollama-venv/bin/python3 -m runner.main"
+   /home/${REMOTE_USER}/ollama-venv/bin/python3 -u -m runner.main"
 echo "Benchmark complete."
 
 # ── Copy results back ──────────────────────────────────────────────────────────
