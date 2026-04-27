@@ -1,4 +1,4 @@
-import os, time, json
+import os, time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,14 +11,22 @@ from langchain.messages import HumanMessage, SystemMessage
 from utils.graph import BugClassification
 from utils.output_parser import try_to_invoke
 from utils.tool_analysis import log_tool_interactions
-from utils.prompts import SINGLE_PROMPT_DETECTION_AND_CLASSIFICATION
-from utils.experiments import OllamaExperimentConfig
-from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count, print_results
+from utils.experiments import OllamaExperimentConfig, ExperimentLogger, extract_latest_prompt_version, get_prompt_version
+from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count
 
 
 class VerificationAgent():
 
-  def __init__(self, validation_paths: str, test_paths : str,provider='Google',model="gemini-2.5-flash", logging = True,ollama_cfg : None | OllamaExperimentConfig = None):
+  def __init__(
+      self, 
+      validation_paths: str, 
+      test_paths : str,
+      provider='Google',
+      model="gemini-2.5-flash", 
+      logging = True,
+      ollama_cfg : None | OllamaExperimentConfig = None,
+      prompt_version : str | None = None
+      ):
     if provider == 'Google':
       api_key = os.getenv("GEMINI_API_KEY")
       self.llm = ChatGoogleGenerativeAI(model=model,google_api_key=api_key, max_retries = 3)
@@ -35,6 +43,7 @@ class VerificationAgent():
           top_k=ollama_cfg.options.get("top_k", 40),
           seed = ollama_cfg.seed,
       )
+      self.cfg = ollama_cfg
     else:
       print("Other providers not currently supported")
       self.llm = None  
@@ -43,16 +52,45 @@ class VerificationAgent():
     self.logging = logging
     self.model = model
     self.usage_metadata = []
+    self.provider = provider
     self.last_run_time = -1
+    self.prompt_v = prompt_version if prompt_version else extract_latest_prompt_version("detection_and_classification")
     self.structured_llm = self.llm.with_structured_output(BugClassification, include_raw=True)
       
+  def get_config(self):
+    if self.provider == 'Ollama':
+      return {
+        "architecture": "CoT",
+        "set": self.cfg._set,
+        "model": self.model,
+        "temperature": self.cfg.temperature,
+        "top_p":self.cfg.options["top_p"],
+        "top_k":self.cfg.options["top_k"],
+        "num_ctx": self.cfg.options["num_ctx"],
+        "seed": self.cfg.seed,
+        "prompt_v": self.prompt_v
+      }
+    else:
+      return {
+        "architecture": "CoT",
+        "model": self.model,
+        "temperature": self.llm.temperature,
+        "top_p": getattr(self.llm, "top_p", None),
+        "top_k":getattr(self.llm, "top_k",None),
+        "num_ctx": getattr(self.llm, "num_ctx", None),
+        "seed" : getattr(self.llm, "seed", None),
+        "prompt_v": self.prompt_v
+        }
+
+    
   def run_on_benchmark(self, validation : bool = False, save_usage_metadata : bool=True, insert_sleep:bool=True):
     
     path = self.validation_paths if validation else self.test_paths
     with open(path,'r') as f:
       prg_paths = f.readlines()
 
-    sysMsg = SystemMessage(content=SINGLE_PROMPT_DETECTION_AND_CLASSIFICATION)
+    prompt = get_prompt_version("detection_and_classification", self.prompt_v)
+    sysMsg = SystemMessage(content=prompt)
     classification_data = {}
     thinking_log = {}
     verified_prg = 0
@@ -98,7 +136,10 @@ class VerificationAgent():
 
     res = try_into_dataframe(classification_data, self.model)
 
-    return res
+    config = self.get_config()
+    config["set"] = "validation" if validation else "test"
+
+    return res, config
   
     
 #Groq models: qwen/qwen3-32b, llama-3.3-70b-versatile, llama-3.1-8b-instant, meta-llama/llama-4-maverick-17b-128e-instruct,
@@ -110,24 +151,10 @@ if __name__=='__main__':
     test_paths='benchmarks_paths/test_set.txt', 
     validation_paths='benchmarks_paths/validation_set.txt'
     )
-  df = a.run_on_benchmark(validation=True, save_usage_metadata=True, insert_sleep=False)
+  df, config = a.run_on_benchmark(validation=True, save_usage_metadata=True, insert_sleep=True)
   print(f"Time required: {a.last_run_time}")
   print(f"Usage metadata: {a.usage_metadata}")
   print_token_count(a.usage_metadata)
-  stop = False
-  while not stop:
-    try:
-      df = df.T
-      df.to_csv(f"results/test_{a.model}.csv", index=True) 
-      print(df.head()) 
-      print_results(f"results/test_{a.model}.csv",'benchmarks_paths/validation_set.txt')
-      stop = True
-    except Exception as e:
-      stop = False
-      print(f"Exception: {e}")
-      i = input("Retry? [Y/N]")
-      if i != "Y":
-        stop = True
-    
-
-
+  df = df.T
+  logger = ExperimentLogger()
+  logger.log_run(config, df)

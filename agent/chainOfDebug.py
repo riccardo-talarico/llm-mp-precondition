@@ -13,7 +13,7 @@ from utils.prompts import *
 from utils.graph import *
 from utils.output_parser import try_to_invoke
 from utils.go_parsing import parse_go_concurrency
-from utils.experiments import OllamaExperimentConfig
+from utils.experiments import OllamaExperimentConfig, get_prompt_version, ExperimentLogger, load_prompt_string, extract_latest_prompt_version
 from utils.tool_analysis import log_tool_interactions
 from utils.results import extract_id, try_into_dataframe, get_usage_metadata, print_token_count
 
@@ -28,6 +28,7 @@ class ChainOfDebugAgent():
             debug_level: int = 0, 
             logging = True,
             ollama_cfg : None | OllamaExperimentConfig = None,
+            prompt_config : dict | None = None,
             max_retries : int = 1,
             insert_sleep: bool = False
         ):
@@ -45,20 +46,58 @@ class ChainOfDebugAgent():
             top_p=ollama_cfg.options.get("top_p", 0.9),
             top_k=ollama_cfg.options.get("top_k", 40),
             seed = ollama_cfg.seed,
-        )
+            )
+            prompt_config = ollama_cfg.prompt_config
+            self.cfg = ollama_cfg
         else:
             self.llm = None
         self.graph = StateGraph(State)
         self.compiled = False
+        self.provider = provider
         self.structured_output_method = struct_output_method
-        self.load_prompts()
         self.debug_level = debug_level
         self.logging = logging
         self.model = model
         self.insert_sleep = insert_sleep
         self.last_run_time = -1
         self.usage_metadata = []
+        self.prompt_config = {
+            "generate_trace":None,
+            "identify_sections":None,
+            "understand_section":None,
+            "check_balance":None,
+            "classification":None,
+            "verify_trace":None,
+            "generate_trace_ideas":None
+        } if not prompt_config else prompt_config
+        self.load_prompts()
             
+    def get_config(self):
+        if self.provider == 'Ollama':
+            return {
+                "architecture": "COCSA",
+                "set": self.cfg._set,
+                "model": self.model,
+                "temperature": self.cfg.temperature,
+                "top_p":self.cfg.options["top_p"],
+                "top_k":self.cfg.options["top_k"],
+                "num_ctx": self.cfg.options["num_ctx"],
+                "seed": self.cfg.seed,
+                "prompt_v": self.cfg.prompt_config
+            }
+        else:
+            #TODO: might add other architectures in the future
+            return {
+                "architecture": "COCSA",
+                "model": self.model,
+                "temperature": self.llm.temperature,
+                "top_p": getattr(self.llm, "top_p", None),
+                "top_k":getattr(self.llm, "top_k",None),
+                "num_ctx": getattr(self.llm, "num_ctx", None),
+                "seed" : getattr(self.llm, "seed", None)
+            }
+    
+
     def _get_concurrency_primitives(self, state : State, config : RunnableConfig, node_name : str = None):
         """The function describes the first node logic: 
         it runs a script to identify concurrency structures and functions using them"""        
@@ -221,10 +260,11 @@ class ChainOfDebugAgent():
         it asks the llm to verify if the trace is possible or if it originates from 
         an impossible execution path."""
         
-        input = [SystemMessage(self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"]))]
-        structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method, include_raw=True)
-        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=TraceEvaluation,fixing_llm=self.llm,execution_point=node_name)
-        return msg
+        #input = [SystemMessage(self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"]))]
+        #structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method, include_raw=True)
+        #msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=TraceEvaluation,fixing_llm=self.llm,execution_point=node_name)
+        sysprompt = self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"])
+        return self._no_context_call(state, config, node_name, sysprompt, TraceEvaluation)
 
 
     @handle_early_exit("classification")
@@ -232,10 +272,11 @@ class ChainOfDebugAgent():
         """The function describes the logic of the create classification node: 
         it asks the llm to classify the bug, given the program and the problematic trace."""
 
-        input = [SystemMessage(self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"]))]
-        structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method, include_raw=True)
-        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=BugClassification,fixing_llm=self.llm,execution_point=node_name)
-        return msg
+        #input = [SystemMessage(self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"]))]
+        #structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method, include_raw=True)
+        #msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=BugClassification,fixing_llm=self.llm,execution_point=node_name)
+        sysprompt = self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"])
+        return self._no_context_call(state, config, node_name, sysprompt, BugClassification)
     
     def _empty_classification(self, state: State):
         """Function that describe the logic of the empty classification node: 
@@ -300,20 +341,39 @@ class ChainOfDebugAgent():
         if not self.compiled:
             print("WARNING: agent not compiled: you must call the 'compile_chain' method first.")
             return
-        response = self.graph.invoke({"code":code, "early_stop": False})
+        response = self.graph.invoke({"code":code, "early_stop": False, "tokens":(0,0)})
         if self.logging:
             log_tool_interactions(response)
         return response
-    
+
     def load_prompts(self):
-        self.generate_trace_from_idea_prompt = GENERATE_TRACE_FROM_IDEA_PROMPT
-        self.identify_sections_prompt = IDENTIFY_SECTIONS_PROMPT
-        self.understand_section_prompt = UNDERSTAND_SECTION_PROMPT
-        self.check_balance_prompt = CHECK_BALANCE_PROMPT
-        self.generate_trace_ideas_prompt = GENERATE_TRACE_IDEAS_PROMPT
-        self.generate_list_of_traces_prompt = GENERATE_TRACES_PROMPT
-        self.verify_trace_prompt = VERIFY_TRACE_PROMPT
-        self.classification_prompt = CLASSIFICATION_PROMPT
+        self.generate_trace_from_idea_prompt = load_prompt_string(
+            get_prompt_version(prompt_name="generate_trace", version=self.prompt_config["generate_trace"])
+            )
+        self.identify_sections_prompt = load_prompt_string(
+            get_prompt_version("identify_sections", version=self.prompt_config["identify_sections"])
+            )
+        self.understand_section_prompt = load_prompt_string(
+            get_prompt_version("understand_section", version=self.prompt_config["understand_section"])
+        )
+        self.check_balance_prompt = load_prompt_string(
+            get_prompt_version("check_balance", version=self.prompt_config["check_balance"])
+        )
+        self.generate_trace_ideas_prompt = load_prompt_string(
+            get_prompt_version("generate_trace_ideas", version=self.prompt_config["generate_trace_ideas"])
+        )
+        self.generate_list_of_traces_prompt =""
+        self.verify_trace_prompt = load_prompt_string(
+            get_prompt_version("verify_trace", version=self.prompt_config["verify_trace"])
+        )
+        self.classification_prompt = load_prompt_string(
+            get_prompt_version("classification", version=self.prompt_config["classification"])
+        )
+        for key in self.prompt_config.keys():
+            if self.prompt_config[key] is None:
+                version = extract_latest_prompt_version(key)
+                print(f"DEBUG: {version}")
+                self.prompt_config[key] = extract_latest_prompt_version(key)
 
     def run_on_benchmark(self, paths_file : str, save_usage_metadata:bool=True):
         """The function runs the chain agent on all the programs specified by 'paths_file'.
@@ -327,9 +387,9 @@ class ChainOfDebugAgent():
 
         classification_data = {}
         thinking_log = {}
-        #usage_metadata = []
         verified_prg = 0
         start = time.time()
+        input_tokens, output_tokens = 0,0
         for prg_path in prg_paths:
             # [:-1] to ignore the '\n'
             prg_path = prg_path[:-1]
@@ -337,14 +397,21 @@ class ChainOfDebugAgent():
                 id = extract_id(prg_path)
                 print(f"Id: {id}")
                 prog = f.read()
+                  
                 response = self.invoke_chain(prog)
-
                 try:
                     classification_data[id] = response['classification'].get_classification()
                 except Exception as e:
                     print(f"Could not convert response into dictionary: {e}")
                     classification_data[id] = response['classification']
                     
+                try:
+                    intok,outtok = response['tokens']
+                    input_tokens += intok
+                    output_tokens += outtok
+                except Exception as e:
+                    print(f"Unable to extract token count: {e}")
+                
                 thinking_log[id] = response['reasoning']
                 print(f"{response['classification']}")
                 verified_prg+=1
@@ -366,20 +433,28 @@ class ChainOfDebugAgent():
         except Exception as e:
             print(f"Cannot save thinking data: {e}")
 
-        return res
+        config = self.get_config()
+        config["set"] = "validation" if "validation" in paths_file else "test"
+        config["prompt_v"] = self.prompt_config
+        return res, input_tokens, output_tokens, config
+    
+
 # llama-3.3-70b-versatile, qwen/qwen3-32b (No support tool calling), 
 # moonshotai/kimi-k2-instruct, llama-3.1-8b-instant
 # meta-llama/llama-4-scout-17b-16e-instruct, groq/compound-> no support for tool calling
 # meta-llama/llama-4-maverick-17b-128e-instruct
 # openai/gpt-oss-120b
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='meta-llama/llama-4-scout-17b-16e-instruct',debug_level=2, insert_sleep=True)
+    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant',debug_level=2, insert_sleep=True)
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     print("Starting")
-    df = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
+    df, input_tokens, output_tokens, config = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
     print_token_count(a.usage_metadata)
     print(f"Time required:{a.last_run_time}")
-    df = df.T
-    df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)
+    df = df.T  
+    logger = ExperimentLogger()
+
+    logger.log_run(config, df)
+    #df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)
 
