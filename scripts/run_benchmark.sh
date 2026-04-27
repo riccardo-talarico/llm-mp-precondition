@@ -139,13 +139,16 @@ fi
 # ── Copy files ─────────────────────────────────────────────────────────────────
 echo "Copying files to ${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}..."
 ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
-  "mkdir -p '${REMOTE_DIR}'/{config,utils,results,agent,runner,benchmarks,benchmarks_paths}"
+  "mkdir -p '${REMOTE_DIR}'/{config,utils,results,agent,runner,prompts,benchmarks,benchmarks_paths}"
 
 scp "${SCP_OPTS[@]}" \
   "${EFFECTIVE_CONFIG}" \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/config/experiment.yaml"
 
 scp "${SCP_OPTS[@]}" -r utils \
+  "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
+
+scp "${SCP_OPTS[@]}" -r prompts \
   "${REMOTE_USER}@${PUBLIC_IP}:${REMOTE_DIR}/"
 
 scp "${SCP_OPTS[@]}" -r runner\
