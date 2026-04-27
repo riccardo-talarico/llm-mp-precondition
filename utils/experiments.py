@@ -20,14 +20,14 @@ class OllamaExperimentConfig:
     prompt_config: dict[str, str]
 
     def extract_metadata(self):
-        #TODO: add section for prompt config
         return {
             "model": self.model,
             'set': self._set, 
             "temperature": self.temperature, 
             "top_p": self.options.get("top_p"), 
             "top_k": self.options.get("top_k"),
-            "num_ctx": self.options.get("num_ctx")
+            "num_ctx": self.options.get("num_ctx"),
+            "prompt_config": self.options.get("prompt_config", default=None)
         }
     
 
@@ -84,9 +84,20 @@ class ExperimentLogger:
         if not os.path.exists(self.index_path):
             with open(self.index_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["run_id", "timestamp", "architecture", "set", "model", "temperature", "top_p", "top_k", "num_ctx","seed", "prompt_v", "output_file"])
+                writer.writerow(["run_id", "timestamp", "architecture", "set", "model", "input_tokens", "output_tokens", "temperature", "top_p", "top_k", "num_ctx","seed", "prompt_v", "output_file"])
 
     def log_run(self, metadata: Dict[str, Any], output_df: pd.DataFrame):
+        """
+        Saves the results of output_df into a csv and create a corresponding entry in the master_index
+        using 'metadata'
+
+        Args:
+            metadata (Dict[str, Any]): metadata used to save the results, should contain information on architecture, prompt versioning and hyperparameters.
+            output_df (pd.DataFrame): results of the agent run.
+        
+        Returns:
+            str: the run_id created for saving the results
+        """
         run_id = str(uuid.uuid4())[:8]
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         filename = f"run_{run_id}.csv"
@@ -106,6 +117,8 @@ class ExperimentLogger:
                 metadata.get("architecture"),
                 metadata.get('set'),
                 metadata.get("model"), 
+                metadata.get("input_tokens", default=-1),
+                metadata.get("output_tokens", default=-1),
                 metadata.get("temperature"), 
                 metadata.get("top_p"), 
                 metadata.get("top_k"),
@@ -116,6 +129,7 @@ class ExperimentLogger:
             ])
         
         print(f"Experiment {run_id} logged to {self.index_path}")
+        return run_id
 
 
 def get_prompt_version(prompt_name: str, version: str | None = None):
@@ -124,19 +138,6 @@ def get_prompt_version(prompt_name: str, version: str | None = None):
         raise FileNotFoundError(f"Directory not found: {directory}")
     if not version:
         version = extract_latest_prompt_version(prompt_name)
-        ## Get all .yaml files with their full paths
-        #files = [
-        #    os.path.join(directory, f) 
-        #    for f in os.listdir(directory) 
-        #    if f.endswith(('.yaml', '.yml'))
-        #]
-        #if not files:
-        #    raise FileNotFoundError(f"No YAML files found in {directory}")
-#
-        ## Get the file with the most recent modification time
-        #latest_file = max(files, key=os.path.getmtime)
-        #return latest_file
-    
 
     for filename in os.listdir(directory):
         if version in filename and filename.endswith(('.yaml', '.yml')):

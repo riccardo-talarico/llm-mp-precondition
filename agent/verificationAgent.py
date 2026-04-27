@@ -12,7 +12,7 @@ from utils.graph import BugClassification
 from utils.output_parser import try_to_invoke
 from utils.tool_analysis import log_tool_interactions
 from utils.experiments import OllamaExperimentConfig, ExperimentLogger, extract_latest_prompt_version, get_prompt_version
-from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count
+from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count, get_token_count
 
 
 class VerificationAgent():
@@ -138,6 +138,10 @@ class VerificationAgent():
 
     config = self.get_config()
     config["set"] = "validation" if validation else "test"
+
+    input_tokens, output_tokens = get_token_count(self.usage_metadata)
+    config["input_tokens"] = input_tokens
+    config["output_tokens"] = output_tokens
 
     return res, config
   

@@ -436,7 +436,9 @@ class ChainOfDebugAgent():
         config = self.get_config()
         config["set"] = "validation" if "validation" in paths_file else "test"
         config["prompt_v"] = self.prompt_config
-        return res, input_tokens, output_tokens, config
+        config["input_tokens"] = input_tokens
+        config["output_tokens"] = output_tokens
+        return res, config
     
 
 # llama-3.3-70b-versatile, qwen/qwen3-32b (No support tool calling), 
@@ -449,7 +451,7 @@ if __name__ == '__main__':
     a.compile_chain(save_img=True)
     # Running the benchmark on the validation set
     print("Starting")
-    df, input_tokens, output_tokens, config = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
+    df, config = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
     print_token_count(a.usage_metadata)
     print(f"Time required:{a.last_run_time}")
     df = df.T  
