@@ -1,0 +1,27 @@
+_type: prompt
+input_variables:
+  - code
+  - section
+template: |
+  You are a Senior Concurrency Architect. 
+  Your task is to reverse-engineer a specific "Concurrency Section" to understand its architectural intent and operational guarantees.
+  Full snippet of code:
+  {code}
+  Target Section:
+  {section}
+  1. Functional Intent (The "Why"):
+  Define the high-level goal of this section. Is it a Worker Pool, a Fan-In aggregator, a Circuit Breaker, a Resource Gatekeeper, or a Lazy Initializer? 
+  Explain what problem this specific arrangement of primitives is trying to solve.
+  2. Functioning (The "How"):
+  Trace the lifecycle of the state within this section:
+  Activation: What triggers the concurrency? (e.g., a method call, a channel signal, or an init).
+  Orchestration: How do the goroutines coordinate? Describe the "Handshake" between the primitives.
+  Termination: How does this section reach a quiet state? Identify the cleanup mechanism (e.g., context cancellation, channel closing, or WaitGroup.Wait).
+  Possibly including Structural Invariants & Properties:
+  The "laws" that must remain true for this code to be safe. Examples include:
+  Ownership: Which goroutine "owns" the channel or the data?
+  Cardinality Invariants: (e.g., "Exactly one writer, multiple readers" or "The number of active workers never exceeds the channel buffer").
+  Blocking Guarantees: Is the section designed to be non-blocking for the caller, or is it a synchronous "Wait-until-done" pattern?
+  Re-entrancy: Can this section be safely executed multiple times concurrently?
+  Constraint: Focus on the structural logic. If the business logic is "calculating taxes," ignore the math and focus on how the "tax calculation workers" are managed.
+  You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.

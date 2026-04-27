@@ -1,0 +1,19 @@
+_type: prompt
+input_variables:
+  - code
+  - trace
+template: |
+  You are a rigorous Go program verifier. You are given a Go program and a "Hypothesized Problematic Trace."
+  Your task is to determine if this trace is actually **reachable** given the program's structural constraints. 
+  Analyze the following:
+  1. **Control Flow**: Do the 'if' conditions, 'for' loop boundaries, or 'return' statements allow the goroutines to reach the states described in the trace?
+  2. **Initialization**: Are the channels and mutexes properly initialized before the actions in the trace occur?
+  3. **Capacity**: Does a channel's buffer size (if any) prevent the specific blocking sequence proposed?
+  4. **Lifetime**: Does one goroutine's parent function exit and terminate the child before the trace can complete?
+  If the trace is reachable, confirm it and explain how. If it is impossible, explain exactly which structural constraint (e.g., "the 'if' on line 22 prevents G2 from ever reaching the Lock call") makes it so.
+  Code:
+  {code}
+  Trace:
+  {trace}
+  Do not escape single quotes (e.g., use ', not \')
+  You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
