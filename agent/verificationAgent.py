@@ -11,7 +11,7 @@ from langchain.messages import HumanMessage, SystemMessage
 from utils.graph import BugClassification
 from utils.output_parser import try_to_invoke
 from utils.tool_analysis import log_tool_interactions
-from utils.experiments import OllamaExperimentConfig, ExperimentLogger, extract_latest_prompt_version, get_prompt_version
+from utils.experiments import OllamaExperimentConfig, ExperimentLogger, extract_latest_prompt_version, get_prompt_version, load_prompt_string
 from utils.results import extract_id, get_usage_metadata, try_into_dataframe, print_token_count, get_token_count
 
 
@@ -89,7 +89,8 @@ class VerificationAgent():
     with open(path,'r') as f:
       prg_paths = f.readlines()
 
-    prompt = get_prompt_version("detection_and_classification", self.prompt_v)
+    prompt_file_name = get_prompt_version("detection_and_classification", self.prompt_v)
+    prompt = load_prompt_string(prompt_file_name)
     sysMsg = SystemMessage(content=prompt)
     classification_data = {}
     thinking_log = {}
