@@ -105,7 +105,7 @@ class BalanceReport(BaseModel):
         description="List of concise problem descriptions. Empty if none."
     )
     summary: str = Field(
-        description="Short overall assessment (max 25 words)"
+        description="Description of the problems found: which primitives and commands are involved and how (max 50 words)"
     )
     @classmethod
     def get_json_template(cls):
@@ -118,13 +118,13 @@ class BugIdea(BaseModel):
         description="Type of issue (e.g., deadlock, race_condition, goroutine_leak, waitgroup_misuse)"
     )
     description: str = Field(
-        description="Short explanation of the potential issue (max 20 words)"
+        description="Short explanation of the potential issue (max 40 words)"
     )
     location: str = Field(
         description="Reference to the relevant section or code region"
     )
     support_info: list[str] = Field(
-        description="Up to 2 short facts extracted from the analysis provided in the prompt supporting the idea"
+        description="Up to 3 short facts extracted from the analysis provided in the prompt supporting the idea"
     )
     @classmethod
     def get_json_template(cls):
