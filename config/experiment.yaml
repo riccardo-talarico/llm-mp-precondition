@@ -6,8 +6,9 @@ models:
   #- "mistral:7b"
   #- "llama3.1:8b"
   - "llama3.3:70b"
+  #- "qwen2.5:7b"
 
-temperature: 0.7
+temperature: 0.0
 
 seed: 42
 
@@ -19,6 +20,15 @@ set : "validation"
 
 # Extra options passed to Ollama /api/generate
 options:
-  num_ctx: 8192
+  num_ctx: 4096
   top_p: 0.9
   top_k: 40
+
+prompt_config:
+  identify_sections: "v1"
+  understand_section: "v1"
+  check_balance: "v1"
+  generate_trace_ideas: "v1"
+  generate_trace: "v1"
+  verify_trace: "v1"
+  classification: "v1"
