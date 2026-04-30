@@ -4,7 +4,6 @@ from utils.experiments import *
 from pathlib import Path
 from utils.results import print_results, print_token_count
 import os
-from datetime import datetime
 
 
 cfg_path = os.getenv("CONFIG_PATH","config/experiment.yaml")

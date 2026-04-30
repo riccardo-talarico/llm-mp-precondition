@@ -68,7 +68,7 @@ class VerificationAgent():
         "top_k":self.cfg.options["top_k"],
         "num_ctx": self.cfg.options["num_ctx"],
         "seed": self.cfg.seed,
-        "prompt_v": self.prompt_v
+        "prompt_v": {"detection_and_classification":self.prompt_v}
       }
     else:
       return {
@@ -79,7 +79,7 @@ class VerificationAgent():
         "top_k":getattr(self.llm, "top_k",None),
         "num_ctx": getattr(self.llm, "num_ctx", None),
         "seed" : getattr(self.llm, "seed", None),
-        "prompt_v": self.prompt_v
+        "prompt_v": {"detection_and_classification":self.prompt_v}
         }
 
     
@@ -143,6 +143,7 @@ class VerificationAgent():
     input_tokens, output_tokens = get_token_count(self.usage_metadata)
     config["input_tokens"] = input_tokens
     config["output_tokens"] = output_tokens
+    config["time"] = self.last_run_time
 
     return res, config
   

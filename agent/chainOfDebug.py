@@ -204,21 +204,7 @@ class ChainOfDebugAgent():
         except:
             print(answer)
         return answer
-
-
-    @handle_early_exit("trace_list")  
-    def _generate_traces(self, state: State, config: RunnableConfig, node_name: str = None):
-        """
-        The function implements the logic of the 'generate_traces' node:
-        it asks the llm to generate a list of problematic traces, 
-        given the concurrency primitives identified.
-        """
-        sysprompt = self.generate_list_of_traces_prompt.format(primitives=state["concurrency_primitives"],code=state['code'])
-        input = [SystemMessage(sysprompt)]
-        structured_llm = self.llm.with_structured_output(Traces, method=self.structured_output_method, include_raw=True)
-        msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=Traces,fixing_llm=self.llm,execution_point=node_name)
-        return msg
-    
+ 
     def _trace_selector(self, state:State):
         list = state["trace_list"]
         if list is None or len(list)==0:
@@ -259,10 +245,6 @@ class ChainOfDebugAgent():
         """The function describes the logic of the check_trace node: 
         it asks the llm to verify if the trace is possible or if it originates from 
         an impossible execution path."""
-        
-        #input = [SystemMessage(self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"]))]
-        #structured_llm = self.llm.with_structured_output(TraceEvaluation, method=self.structured_output_method, include_raw=True)
-        #msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=TraceEvaluation,fixing_llm=self.llm,execution_point=node_name)
         sysprompt = self.verify_trace_prompt.format(code=state['code'],trace=state["active_trace"])
         return self._no_context_call(state, config, node_name, sysprompt, TraceEvaluation)
 
@@ -271,10 +253,6 @@ class ChainOfDebugAgent():
     def _create_classification(self, state : State, config: RunnableConfig, node_name: str = None):
         """The function describes the logic of the create classification node: 
         it asks the llm to classify the bug, given the program and the problematic trace."""
-
-        #input = [SystemMessage(self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"]))]
-        #structured_llm = self.llm.with_structured_output(BugClassification, method = self.structured_output_method, include_raw=True)
-        #msg = try_to_invoke(llm=structured_llm,msg=input,structured_output_schema=BugClassification,fixing_llm=self.llm,execution_point=node_name)
         sysprompt = self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"])
         return self._no_context_call(state, config, node_name, sysprompt, BugClassification)
     
@@ -318,8 +296,6 @@ class ChainOfDebugAgent():
         self.graph.add_conditional_edges(
             "trace_orchestrator", self._assign_trace_creators, ["generate_trace"]
         )
-        # TODO: maybe an intermediate node is needed for synchronization?
-        # something between generate_trace and trace_selector
         self.graph.add_edge("generate_trace","trace_selector")
         self.graph.add_conditional_edges(
             "trace_selector", self._check_if_trace_list_is_empty, {"EMPTY": "empty_classification", "NOT EMPTY": "check_trace"}
@@ -438,6 +414,7 @@ class ChainOfDebugAgent():
         config["prompt_v"] = self.prompt_config
         config["input_tokens"] = input_tokens
         config["output_tokens"] = output_tokens
+        config["time"] = self.last_run_time
         return res, config
     
 

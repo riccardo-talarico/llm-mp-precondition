@@ -84,7 +84,7 @@ class ExperimentLogger:
         if not os.path.exists(self.index_path):
             with open(self.index_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["run_id", "timestamp", "architecture", "set", "model", "input_tokens", "output_tokens", "temperature", "top_p", "top_k", "num_ctx","seed", "prompt_v", "output_file"])
+                writer.writerow(["run_id", "timestamp", "architecture", "set", "model", "input_tokens", "output_tokens", "temperature", "top_p", "top_k", "num_ctx","seed","time","prompt_v", "output_file"])
 
     def log_run(self, metadata: Dict[str, Any], output_df: pd.DataFrame):
         """
@@ -124,6 +124,7 @@ class ExperimentLogger:
                 metadata.get("top_k"),
                 metadata.get("num_ctx"),
                 metadata.get("seed"),
+                metadata.get("time"),
                 metadata.get("prompt_v"),
                 filename
             ])
