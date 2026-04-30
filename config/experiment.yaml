@@ -1,14 +1,14 @@
 ollama_base_url: "http://ollama:11434"
 
-model: "llama3.3:70b"
+model: "llama3.1:8b"
 
 models: 
   #- "mistral:7b"
-  #- "llama3.1:8b"
-  - "llama3.3:70b"
+  - "llama3.1:8b"
+  #- "llama3.3:70b"
   #- "qwen2.5:7b"
 
-temperature: 0.0
+temperature: 0.1
 
 seed: 42
 
@@ -28,7 +28,7 @@ prompt_config:
   identify_sections: "v1"
   understand_section: "v1"
   check_balance: "v1"
-  generate_trace_ideas: "v1"
+  generate_trace_ideas: "v2"
   generate_trace: "v1"
   verify_trace: "v1"
   classification: "v1"
