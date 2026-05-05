@@ -1,12 +1,16 @@
 ollama_base_url: "http://ollama:11434"
 
-model: "llama3.1:8b"
+model: "qwen2.5-coder:7B"
 
 models: 
   #- "mistral:7b"
-  - "llama3.1:8b"
+  #- "llama3.1:8b"
   #- "llama3.3:70b"
+  #- "codellama:7b" or 13b
   #- "qwen2.5:7b"
+  #- "deepseek-r1:14b"
+  - "qwen2.5-coder:7B"
+  #- "deepseek-coder-v2"
 
 temperature: 0.1
 
@@ -17,18 +21,20 @@ max_retries: 3
 request_timeout_sec: 180
 warmup: true
 set : "validation"
+reasoning : false
 
 # Extra options passed to Ollama /api/generate
 options:
-  num_ctx: 4096
+  num_ctx: 6096
   top_p: 0.9
   top_k: 40
 
 prompt_config:
   identify_sections: "v1"
-  understand_section: "v1"
-  check_balance: "v1"
-  generate_trace_ideas: "v2"
+  understand_section: "rv2"
+  understand_sections: "v1"
+  check_balance: "rv2"
+  generate_trace_ideas: "rv1"
   generate_trace: "v1"
   verify_trace: "v1"
   classification: "v1"

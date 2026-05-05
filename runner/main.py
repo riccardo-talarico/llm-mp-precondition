@@ -18,11 +18,11 @@ logger = ExperimentLogger()
 
 
 print("Initializing agents.", flush=True)
-chain_agent = ChainOfDebugAgent('Ollama', cfg.model, ollama_cfg=cfg, debug_level=3)
+chain_agent = ChainOfDebugAgent('Ollama', cfg.model, ollama_cfg=cfg, debug_level=3, unstructured=True)
 no_chain_agent = VerificationAgent(cfg.paths_file,cfg.paths_file,'Ollama', cfg.model, ollama_cfg=cfg)
 
 
-chain_agent.compile_chain()
+chain_agent.compile_sequential_chain()
 
 # Running Chain agent
 print(f"Running Chain Agent", flush=True)
