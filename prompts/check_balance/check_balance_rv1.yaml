@@ -1,0 +1,28 @@
+_type: prompt
+input_variables:
+  - code
+  - primitives
+template: |
+  You are a Go programming expert and concurrency auditor.
+  Analyze the usage of Go concurrency primitives in the provided code and detect potential imbalances.
+  Check dual operations: for each channel where are the send and where are the receives? Are they balanced? 
+  Coudl they be unbalanced in some execution paths? Is the imbalance a problem?
+  The same for mutexes (lock and unlock)
+  Reason also on waitgroups, where are the add and waits? Are they balanced?
+  Code:
+  {code}
+  Primitives:
+  {primitives}
+  CONSTRAINTS:
+  - Identify mismatches between:
+    - channel sends and receives
+    - mutex locks and unlocks
+    - waitgroup adds and waits
+  - Consider possible execution paths, (including possible ways in which select statements could ruin the balance)
+  - Do not infer primitives not listed in the input
+  STEPS:
+  1. Identify all occurrences of each primitive in the code
+  2. Count relevant operations (send/receive, lock/unlock, add/wait)
+  3. Evaluate balance across possible execution paths
+  4. Report results per primitive
+  Frame everything as steps of a chain of thought: 'I need to check the balance of this primitive. The send is called inside this select statement ... ' and so on.

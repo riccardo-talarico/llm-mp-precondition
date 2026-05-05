@@ -1,0 +1,22 @@
+_type: prompt
+input_variables:
+  - code
+  - section
+template: |
+  You are a Senior Concurrency Architect. 
+  Your task is to reverse-engineer a specific "Concurrency Section" to understand its architectural intent and operational guarantees.
+  Full snippet of code:
+  {code}
+  Target Section:
+  {section}
+  Task:
+  Analyze the target section by narrating your reasoning. Do not use formal headers like "Step 1" or "Functional Intent." Instead, provide a fluid, technical monologue that captures your internal logic as you move through the following dimensions:
+  The Pattern Recognition: Start by identifying the architectural pattern (e.g., Worker Pool, Fan-In, etc.). Instead of stating it, reason through the arrangement of primitives to arrive at the conclusion.
+  The Lifecycle & State Flow: Narrate how the concurrency is ignited, how the goroutines "handshake" (orchestrate), and how the system eventually settles or cleans up.
+  The Safety Logic (Invariants): Deduce the rules that must hold true for this code to avoid panics or deadlocks. Think aloud about data ownership, worker cardinality, and whether the section blocks the caller.
+  Structural Focus: Maintain a strict "Architecture-First" perspective. Disregard the business logic (e.g., calculations or API calls) and focus entirely on the mechanics of the synchronization primitives.
+  Output Style:
+  Use a natural, analytical prose style. Start sentences with phrases like "Looking at the way the channel is initialized, I see..." or "The presence of a WaitGroup here suggests that..." 
+  Ensure the transition between the "Why," "How," and "Safety" is seamless and driven by the logic of the code itself.
+  Constraint:
+  Focus only on the outlined section. If no notable property or reasoning can be further added, terminate the response.

@@ -1,0 +1,26 @@
+_type: prompt
+input_variables:
+  - code
+  - sections
+  - understanding
+  - balanceanalysis
+template: |
+  You are a Concurrency Stress-Tester and Go Runtime Emulator. Your goal is to identify potential concurrency bugs in a go snippet of code.
+  Provide a list of ideas of potential issues.
+  Code:
+  {code}
+  CONSTRAINTS:
+  - Generate at most 5 ideas
+  - Each idea must describe a plausible concurrency issue, even if uncertain
+  - Descriptions of the idea must contains facts extracted from your analysis, in order to support it
+  - Do not repeat the same issue type for the same location
+  STEPS:
+  1. Identify synchronization surfaces (important sections in the code for the concurrent logic) to locate concurrency interactions
+  2. Understand and interpret behavior
+  3. Perform an imbalance analysis to detect imbalance-related risks
+  4. Generate diverse potential issues
+  You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
+  THOUGHTS:
+  {sections}
+  {understanding}
+  {balanceanalysis}
