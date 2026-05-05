@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
-from langchain.messages import SystemMessage, HumanMessage
+from langchain.messages import SystemMessage, HumanMessage, AIMessage
 
 import os, time, json
 from dotenv import load_dotenv
@@ -30,7 +30,8 @@ class ChainOfDebugAgent():
             ollama_cfg : None | OllamaExperimentConfig = None,
             prompt_config : dict | None = None,
             max_retries : int = 1,
-            insert_sleep: bool = False
+            insert_sleep: bool = False,
+            unstructured : bool = True
         ):
         if provider == 'Google':
             self.llm = ChatGoogleGenerativeAI(model=model,api_key=os.getenv("GEMINI_API_KEY"))
@@ -46,6 +47,7 @@ class ChainOfDebugAgent():
             top_p=ollama_cfg.options.get("top_p", 0.9),
             top_k=ollama_cfg.options.get("top_k", 40),
             seed = ollama_cfg.seed,
+            reasoning = ollama_cfg.reasoning
             )
             prompt_config = ollama_cfg.prompt_config
             self.cfg = ollama_cfg
@@ -59,12 +61,14 @@ class ChainOfDebugAgent():
         self.logging = logging
         self.model = model
         self.insert_sleep = insert_sleep
+        self.unstructured = unstructured
         self.last_run_time = -1
         self.usage_metadata = []
         self.prompt_config = {
             "generate_trace":None,
             "identify_sections":None,
             "understand_section":None,
+            "understand_sections":None,
             "check_balance":None,
             "classification":None,
             "verify_trace":None,
@@ -110,12 +114,28 @@ class ChainOfDebugAgent():
         The function incapsulate the prompt inside a SystemMessage and then passes it to a structured llm 
         obtained with 'schema'.
         """
+        input = [SystemMessage(prompt)]
+        return self._call(state, config, node_name, input, schema)
+    
+    def _reasoning_call(self, state : State, config: RunnableConfig, node_name : str, prompt: str, reasoning: str, text:str, schema):
+        """
+        Function that defines a reasoning call, it passes 'reasoning' and 'text' as reasoning tokens emitted by the model
+        It incapsulate them inside an AIMessage, and passess it with a SystemMessage containing prompt to a structured llm 
+        obtained with 'schema'.
+        """
+        input = [
+            AIMessage(content = [{"type":"reasoning", "reasoning":reasoning}, {"type":"text", "text":text}]),
+            SystemMessage(content=prompt)
+            ]
+        
+        return self._call(state, config, node_name, input, schema)
+    
+    def _call(self, state: State, config: RunnableConfig, node_name:str, input, schema): 
         if state['early_stop']:
             return "ABORTED"
         if self.insert_sleep:
             time.sleep(15)
-
-        input = [SystemMessage(prompt)]
+        
         if schema is not None:
             calling_llm = self.llm.with_structured_output(schema, method=self.structured_output_method, include_raw=True)
             if self.structured_output_method == 'json_mode':
@@ -126,6 +146,7 @@ class ChainOfDebugAgent():
             calling_llm = self.llm
         msg = try_to_invoke(calling_llm, input, schema, self.llm, execution_point=node_name)
         if self.debug_level > 2:
+            print(f"Node {node_name} executed")
             print(msg)
         return msg
 
@@ -138,6 +159,30 @@ class ChainOfDebugAgent():
         sysprompt = self.identify_sections_prompt.format(code=state['code'], primitives=state['concurrency_primitives'])
         return self._no_context_call(state, config, node_name, sysprompt, schema=ConcurrencySections)
     
+    def _sequentially_assign_sections(self, state : SequentialState, config:RunnableConfig, node_name:str = None):
+        
+        if state['early_stop']:
+            return "STOP"
+        
+        list = state["concurrency_sections"].sections
+        if list is None or len(list)==0:
+            if self.debug_level > 0:
+                print("Empty sections list")
+                if list is None:
+                    print("trace list is none")
+            return {"active_section":None}
+        else:
+            if self.debug_level > 0:
+                print(f"Remaining sections: {len(list)}")
+            active_section = list[0]
+            list = list[1:]
+            sections = ConcurrencySections(sections=list)
+            return {
+                "active_section": active_section,
+                'concurrency_sections':sections 
+            }
+
+
     @handle_early_exit("section_explanations")
     def _understand_section(self, state : WorkerState, config : RunnableConfig, node_name : str = None):
         """
@@ -150,7 +195,24 @@ class ChainOfDebugAgent():
         except:
             print(answer)
         return answer
-
+    
+    @handle_early_exit("section_explanations")
+    def _unstruct_section(self, state : WorkerState, config : RunnableConfig, node_name : str = None):
+        sysprompt = self.understand_section_prompt.format(code=state['code'], section=state['section'])
+        answer = self._no_context_call(state, config, node_name, sysprompt, schema=None)
+        try:
+            answer['parsed'] = [answer['parsed']]
+        except:
+            print(answer)
+        return answer
+    
+    @handle_early_exit("section_explanations")
+    def _understand_sections(self, state: SequentialState, config:RunnableConfig, node_name:str = None):
+        """
+        The function calls the llm for the 'understand_sections' node.
+        """
+        sysprompt = self.understand_sections_prompt.format(code=state['code'], sections=state['concurrency_sections'])
+        return self._no_context_call(state, config, node_name, sysprompt, schema=None)
     
     @handle_early_exit('balance_report')
     def _check_balancedness(self, state : State, config : RunnableConfig, node_name : str = None):
@@ -160,7 +222,16 @@ class ChainOfDebugAgent():
         sysprompt = self.check_balance_prompt.format(code=state['code'], primitives=state['concurrency_primitives'])
         return self._no_context_call(state, config, node_name, sysprompt, schema=BalanceReport)
     
-    def _assign_workers(self, state : State, config: RunnableConfig, node_name : str = None):
+    @handle_early_exit('balance_report')
+    def _unstruct_balance(self, state : State, config : RunnableConfig, node_name : str = None):
+        """
+        The function calls the llm for the 'check_balancedness' node.
+        """
+        sysprompt = self.check_balance_prompt.format(code=state['code'], primitives=state['concurrency_primitives'])
+        return self._no_context_call(state, config, node_name, sysprompt, schema=None)
+
+
+    def _assign_workers(self, state : ParallelState, config: RunnableConfig, node_name : str = None):
         """
         The function assign to each LLM worker a concurrency section to analyze.
         """
@@ -179,7 +250,39 @@ class ChainOfDebugAgent():
         sysprompt = self.generate_trace_ideas_prompt.format(code=state['code'],sections=state['concurrency_sections'], understanding=state['section_explanations'], balanceanalysis=state['balance_report'])
         return self._no_context_call(state,config,node_name,sysprompt, schema=TraceIdeas)
 
-    def _assign_trace_creators(self, state: State, config:RunnableConfig, node_name:str = None):
+    @handle_early_exit("trace_ideas")
+    def _relaxed_orchestration(self, state: State, config:RunnableConfig, node_name:str = None):
+        """
+        The function calls the LLM for the 'trace_orchestrator' node.
+        Effectively creating another orchestrator-workers workflow to handle the trace creations.
+        """
+        sysprompt = self.generate_trace_ideas_prompt.format(code=state['code'],sections=state['concurrency_sections'], understanding=state['section_explanations'], balanceanalysis=state['balance_report'])
+        return self._no_context_call(state,config,node_name,sysprompt, schema=RelaxedTraceIdeas)
+    
+
+    def _sequential_assign_trace_creators(self, state:SequentialState, config:RunnableConfig, node_name:str = None):
+        """
+        The function assigns sequentially to each LLM worker a possible trace idea to develop.
+        """
+        lis = state["trace_ideas"].ideas
+        if lis is None or len(lis)==0:
+            if self.debug_level > 0:
+                print("Empty ideas list")
+                if lis is None:
+                    print("idea list is none")
+            return {"active_idea":None}
+        else:
+            if self.debug_level > 0:
+                print(f"Remaining ideas: {len(lis)}")
+            active_idea = lis[0]
+            lis = lis[1:]
+            return {
+                "active_idea": active_idea, 
+                "trace_ideas": RelaxedTraceIdeas(ideas=lis)
+                }
+
+
+    def _assign_trace_creators(self, state: ParallelState, config:RunnableConfig, node_name:str = None):
         """
         The function assigns to each LLM worker a concurrent possible trace idea to develop.
         """
@@ -204,6 +307,11 @@ class ChainOfDebugAgent():
         except:
             print(answer)
         return answer
+    
+    @handle_early_exit("active_trace")
+    def _seq_generate_trace(self, state: SequentialState, config:RunnableConfig, node_name:str = None):
+        sysprompt = self.generate_trace_from_idea_prompt.format(code=state['code'],trace_idea=state['active_idea'])
+        return self._no_context_call(state, config, node_name, sysprompt, schema=Trace)
  
     def _trace_selector(self, state:State):
         list = state["trace_list"]
@@ -223,6 +331,12 @@ class ChainOfDebugAgent():
                 "trace_list": Overwrite(list) # because the reducer 'add' is used for the list
                 }
         
+
+    def _check_if_list_is_empty(self, state:State, key_name:str = "active_idea"):
+        """Guard node to check if the list associated to 'key_name' is empty"""
+        return ("EMPTY" if state[key_name] is None else "NOT_EMPTY")
+        
+
     def _check_if_trace_list_is_empty(self, state:State):
         """Guard node to check if the trace list is empty"""
         if state["active_trace"] is None:
@@ -250,7 +364,7 @@ class ChainOfDebugAgent():
 
 
     @handle_early_exit("classification")
-    def _create_classification(self, state : State, config: RunnableConfig, node_name: str = None):
+    def _create_classification(self, state : State , config: RunnableConfig, node_name: str = None):
         """The function describes the logic of the create classification node: 
         it asks the llm to classify the bug, given the program and the problematic trace."""
         sysprompt = self.classification_prompt.format(code=state['code'],trace=state['active_trace'], trace_eval=state["trace_eval"])
@@ -266,24 +380,93 @@ class ChainOfDebugAgent():
         """Routing function to handle early stopping"""
         return "STOP" if state["early_stop"] else "NO STOP"
 
-    def compile_chain(self, save_img=False):
 
-        """The function compiles the chain, making the agent ready to be invoked."""
+    def _add_nodes(self, sequential:bool=False):
+        # Adding the nodes in the graph
+        self.graph.add_node("get_concurrency_primitives",self._get_concurrency_primitives)
+        self.graph.add_node("identify_sections", self._identify_sections)
+        
+        if self.unstructured and not sequential:
+            self.graph.add_node("understand_section", self._unstruct_section)
+        elif sequential:
+            self.graph.add_node("understand_sections", self._understand_sections)
+        else:
+            self.graph.add_node("understand_section", self._understand_section)
+        
+        if self.unstructured:
+            self.graph.add_node("check_balance", self._unstruct_balance)
+        else:
+            self.graph.add_node("check_balance", self._check_balancedness)
+        
+        if self.unstructured:
+            self.graph.add_node("trace_orchestrator", self._relaxed_orchestration)
+        else:
+            self.graph.add_node("trace_orchestrator", self._orchestrate_traces)
+        
+        if sequential:
+            self.graph.add_node('seq_assign_trace_idea', self._sequential_assign_trace_creators)
+            self.graph.add_node("seq_generate_trace", self._seq_generate_trace)
+            #self.graph.add_node('seq_assign_sections', self._sequentially_assign_sections)
+        else:    
+            self.graph.add_node("trace_selector", self._trace_selector)
+            self.graph.add_node("generate_trace",self._generate_trace)
+        self.graph.add_node("check_trace",self._ask_if_trace_is_possible)
+        self.graph.add_node("create_classification", self._create_classification)
+        self.graph.add_node("empty_classification", self._empty_classification)
+
+
+    def compile_sequential_chain(self, save_img=False):
+        """
+        The function compiles the sequential chain, making the agent ready to be invoked.
+        """
         if self.compiled:
             print("WARNING: you are recompiling an already compiled graph. It will be reinitialized")
             self.graph = StateGraph(State)
         
-        # Adding the nodes in the graph
-        self.graph.add_node("get_concurrency_primitives",self._get_concurrency_primitives)
-        self.graph.add_node("identify_sections", self._identify_sections)
-        self.graph.add_node("understand_section", self._understand_section)
-        self.graph.add_node("check_balance", self._check_balancedness)
-        self.graph.add_node("trace_orchestrator", self._orchestrate_traces)
-        self.graph.add_node("generate_trace",self._generate_trace)
-        self.graph.add_node("trace_selector", self._trace_selector)
-        self.graph.add_node("check_trace",self._ask_if_trace_is_possible)
-        self.graph.add_node("create_classification", self._create_classification)
-        self.graph.add_node("empty_classification", self._empty_classification)
+        self._add_nodes(sequential=True)
+
+        # Connecting the edges
+        self.graph.add_edge(START, "get_concurrency_primitives")
+        self.graph.add_edge("get_concurrency_primitives", "identify_sections")
+        self.graph.add_edge("identify_sections", "understand_sections")
+        self.graph.add_edge("understand_sections", "check_balance")
+        #self.graph.add_edge("identify_sections","seq_assign_sections")
+        #check_if_sections_are_empty = lambda state : self._check_if_list_is_empty(state, key_name='active_section')
+        #self.graph.add_conditional_edges(
+        #    "seq_assign_sections", 
+        #    check_if_sections_are_empty, 
+        #    {'EMPTY':'check_balance', 'NOT_EMPTY':'understand_section'}
+        #)
+        #self.graph.add_edge('understand_section', 'seq_assign_sections')
+        self.graph.add_edge('check_balance','trace_orchestrator')
+        self.graph.add_edge('trace_orchestrator','seq_assign_trace_idea')
+        check_if_ideas_are_empty = lambda state: self._check_if_list_is_empty(state, key_name='active_idea')
+        self.graph.add_conditional_edges(
+            'seq_assign_trace_idea',
+            check_if_ideas_are_empty,
+            {'EMPTY': 'empty_classification', 'NOT_EMPTY':'seq_generate_trace'}
+        )
+        self.graph.add_edge('seq_generate_trace','check_trace')
+        self.graph.add_conditional_edges(
+            "check_trace", 
+            self._check_if_found_bug, 
+            {"NO BUG": "seq_assign_trace_idea", "FOUND": "create_classification", "STOP": END} 
+            )
+        self.graph = self.graph.compile()
+        if self.graph != None:
+            self.compiled = True
+        if save_img:
+            save_graph_img(self.graph, "sequential_chain_of_debug") 
+
+    def compile_chain(self, save_img=False):
+        """
+        The function compiles the chain, making the agent ready to be invoked.
+        """
+        if self.compiled:
+            print("WARNING: you are recompiling an already compiled graph. It will be reinitialized")
+            self.graph = StateGraph(State)
+        
+        self._add_nodes()
 
         # Connecting edges
         self.graph.add_edge(START, "get_concurrency_primitives")
@@ -332,6 +515,9 @@ class ChainOfDebugAgent():
         self.understand_section_prompt = load_prompt_string(
             get_prompt_version("understand_section", version=self.prompt_config["understand_section"])
         )
+        self.understand_sections_prompt = load_prompt_string(
+            get_prompt_version("understand_sections", version=self.prompt_config["understand_sections"])
+        )
         self.check_balance_prompt = load_prompt_string(
             get_prompt_version("check_balance", version=self.prompt_config["check_balance"])
         )
@@ -348,7 +534,7 @@ class ChainOfDebugAgent():
         for key in self.prompt_config.keys():
             if self.prompt_config[key] is None:
                 version = extract_latest_prompt_version(key)
-                print(f"DEBUG: {version}")
+                print(f"DEBUG: prompt version {version}")
                 self.prompt_config[key] = extract_latest_prompt_version(key)
 
     def run_on_benchmark(self, paths_file : str, save_usage_metadata:bool=True):
@@ -424,16 +610,27 @@ class ChainOfDebugAgent():
 # meta-llama/llama-4-maverick-17b-128e-instruct
 # openai/gpt-oss-120b
 if __name__ == '__main__':
-    a = ChainOfDebugAgent(provider='Groq', model='llama-3.1-8b-instant',debug_level=2, insert_sleep=True)
-    a.compile_chain(save_img=True)
+    prompt_config = {
+        "generate_trace":"v1",
+        "identify_sections":"v1",
+        "understand_section":"rv2",
+        "understand_sections":"v1",
+        "check_balance":"rv2",
+        "classification":"v1",
+        "verify_trace":"v1",
+        "generate_trace_ideas":"rv1"
+    }
+    a = ChainOfDebugAgent(provider='Groq', model='meta-llama/llama-4-scout-17b-16e-instruct',debug_level=3, insert_sleep=True, prompt_config=prompt_config)
+    a.compile_sequential_chain(save_img=True)
     # Running the benchmark on the validation set
     print("Starting")
+
+    
     df, config = a.run_on_benchmark("benchmarks_paths/validation_set.txt")
     print_token_count(a.usage_metadata)
     print(f"Time required:{a.last_run_time}")
     df = df.T  
-    logger = ExperimentLogger()
-
-    logger.log_run(config, df)
-    #df.to_csv(f"results/benchmark_results_{a.model}.csv", index=True)
+    #logger = ExperimentLogger()
+#
+    #logger.log_run(config, df)
 

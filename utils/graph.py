@@ -1,5 +1,6 @@
 from langgraph.graph import StateGraph
 from langchain_core.runnables import RunnableConfig
+from langchain.messages import AIMessage
 from functools import wraps
 from typing_extensions import TypedDict, Literal, List, Annotated, Tuple
 from operator import add
@@ -30,7 +31,7 @@ class TraceEvaluation(BaseModel):
         return """{"reachable": "true | false","explanation": "string"}"""
 
 class BugClassification(BaseModel):
-    reasoning: str = Field(description="Step-by-step analysis of the trace and code to identify the bug type.")
+    explanation: str = Field(description="Explanation of why the proposed classification (including the No-bug classification with all fields equal to None) was chosen.")
     cls : Literal['Blocking', 'Nonblocking', 'None']
     type : Literal[
         # blocking:
@@ -133,9 +134,10 @@ class BugIdea(BaseModel):
         }
         """
 
+
 class TraceIdeas(BaseModel):
     ideas : List[BugIdea] = Field(
-        description = "List of possible bugs idea that will be developed into problematic traces"
+        description = "List of possible bugs ideas that will be developed into problematic traces. Order them from the most plausible to the least one."
     )
     @classmethod
     def get_json_template(cls):
@@ -143,17 +145,22 @@ class TraceIdeas(BaseModel):
         "ideas":[{"type":"string","description":"string","location":"string","support_info":"string"}]
         }"""
 
+class RelaxedTraceIdeas(BaseModel):
+    ideas : List[str] = Field(
+        description= "List of possible bugs idea that will be developed into problematic traces. Each idea must be well detailed and contain extract from the analysis that supports it."
+    )
 
 class WorkerState(TypedDict):
     code : str
     section : ConcurrencySection
-    section_explanations : Annotated[List[SectionExplanation], add]
+    section_explanations : Annotated[List[SectionExplanation], add] | Annotated[List[str], add]
     reasoning: Annotated[List[str], add]
     early_stop : bool
 
 class TraceCreatorState(TypedDict):
     code : str
-    trace_idea : BugIdea
+    #TODO: added trace_idea as string to test the unstructured chain
+    trace_idea : BugIdea | str
     trace_list : Annotated[List[Trace], add]
     reasoning: Annotated[List[str], add]
     early_stop : bool
@@ -171,22 +178,28 @@ def sum_tuple_elements(existing: Tuple[int, int] | None, new: Tuple[int, int]) -
     return (existing[0] + new[0], existing[1] + new[1])
 
 
-
 class State(TypedDict):
     code : str
-    early_stop: bool
+    early_stop : bool
     tokens: Annotated[Tuple[int,int], sum_tuple_elements]
-    # Keeps a list of reasoning tokens, the field is not overwritten every time
     reasoning: Annotated[List[str], add]
     concurrency_primitives : str 
     concurrency_sections : ConcurrencySections
-    section_explanations: Annotated[List[SectionExplanation], add]
+    section_explanations: Annotated[List[SectionExplanation], add] | Annotated[List[str],add] | str
+    trace_ideas : TraceIdeas | RelaxedTraceIdeas | None
     balance_report : BalanceReport
-    trace_ideas : TraceIdeas | None
-    classification : BugClassification | None
-    trace_list : Annotated[List[Trace], add]
     active_trace : Trace | None
     trace_eval : TraceEvaluation | None
+    classification : BugClassification | None
+
+class SequentialState(State):
+    section_explanations: str
+    active_idea : str
+    
+
+class ParallelState(State):
+    section_explanations: Annotated[List[SectionExplanation], add] | Annotated[List[str],add]
+    trace_list : Annotated[List[Trace], add]
 
 
 
@@ -199,7 +212,7 @@ def handle_early_exit(state_key : str):
                 node_name = config["metadata"].get("langgraph_node", node_name)
             result = func(self, state, config, node_name=node_name, **kwargs)
             if isinstance(result,str) and result == "ABORTED":
-                return {'early_stop': True, 'classification':{'type':None,'subtype':None,'cls':None}}
+                return {state_key:None,'early_stop': True, 'classification':{'type':None,'subtype':None,'cls':None}}
             # Otherwise wrap the expected result in the corresponding key
             try:
                 reasoning = [result['raw'].additional_kwargs.get("reasoning_content")]
@@ -209,11 +222,15 @@ def handle_early_exit(state_key : str):
                 reasoning = []
                 response_metadata = []
             try:
-                state_update = result['parsed']
-                input_tokens, output_tokens = get_token_count([(0,response_metadata)])
+                if isinstance(result,AIMessage):
+                    state_update = result.content
+                    input_tokens, output_tokens = get_token_count([(0,result.response_metadata)])
+                else:
+                    state_update = result['parsed']
+                    input_tokens, output_tokens = get_token_count([(0,response_metadata)])
             except Exception as e:
                 print(f"Exception during extraction of state update: {e}.\n Aborting the graph call")
-                return {'early_stop':True, 'classification':{'type':None,'subtype':None,'cls':None}}
+                return {state_key: None, 'early_stop':True, 'classification':{'type':None,'subtype':None,'cls':None}}
             return {state_key: state_update, 'reasoning': reasoning, 'tokens': (input_tokens,output_tokens)}
         return early_exit
     return decorator
@@ -229,5 +246,7 @@ def get_universal_template(model_cls):
     return {field: "string" for field in model_cls.model_fields}
 
 if __name__ == '__main__':
-    print(TraceEvaluation.model_json_schema())
-    print(ConcurrencySections.model_json_schema())
+    c = ConcurrencySections(sections=[ConcurrencySection(primitives=[],scope="gg")])
+    l = c.sections
+    l= l[1:]
+    print(l,c.sections) 
