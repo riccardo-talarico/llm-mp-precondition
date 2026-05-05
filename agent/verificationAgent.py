@@ -42,6 +42,7 @@ class VerificationAgent():
           top_p=ollama_cfg.options.get("top_p", 0.9),
           top_k=ollama_cfg.options.get("top_k", 40),
           seed = ollama_cfg.seed,
+          reasoning = ollama_cfg.reasoning
       )
       self.cfg = ollama_cfg
     else:

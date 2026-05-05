@@ -18,6 +18,7 @@ class OllamaExperimentConfig:
     paths_file: str
     options: dict[str, Any]
     prompt_config: dict[str, str]
+    reasoning : bool
 
     def extract_metadata(self):
         return {
@@ -27,7 +28,8 @@ class OllamaExperimentConfig:
             "top_p": self.options.get("top_p"), 
             "top_k": self.options.get("top_k"),
             "num_ctx": self.options.get("num_ctx"),
-            "prompt_config": self.options.get("prompt_config", default=None)
+            "prompt_config": self.options.get("prompt_config", default=None),
+            "reasoning": self.reasoning
         }
     
 
@@ -48,7 +50,8 @@ def load_config(config_path: Path) -> OllamaExperimentConfig:
         warmup=bool(raw.get("warmup", True)),
         options=raw.get("options", {}),
         paths_file=f'benchmarks_paths/{str(raw.get("set","validation"))}_set.txt',
-        prompt_config=raw.get("prompt_config",{})
+        prompt_config=raw.get("prompt_config",{}),
+        reasoning = raw.get("reasoning", False)
     )
 
 
