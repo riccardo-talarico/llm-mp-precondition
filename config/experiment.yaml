@@ -1,15 +1,19 @@
 ollama_base_url: "http://ollama:11434"
 
-model: "qwen2.5-coder:7B"
+model: "deepseek-r1:70b"
 
 models: 
-  #- "mistral:7b"
+  #- "mistral:7b" -> svalvola
+  #- "mistral-nemo" -> svalvola
   #- "llama3.1:8b"
-  #- "llama3.3:70b"
-  #- "codellama:7b" or 13b
-  #- "qwen2.5:7b"
-  #- "deepseek-r1:14b"
-  - "qwen2.5-coder:7B"
+  #- "llama3.3:70b" 
+  #- "codellama:70b" -> svalvola
+  #- "codellama:13b" 
+  #- "qwen2.5:7b" -> svalvola
+  #- "qwen3:14b"
+  - "deepseek-r1:70b"
+  #- "deepseek-v4-flash:cloud" -> unauthorized
+  #- "qwen2.5-coder:14B"
   #- "deepseek-coder-v2"
 
 temperature: 0.1
@@ -21,13 +25,14 @@ max_retries: 3
 request_timeout_sec: 180
 warmup: true
 set : "validation"
-reasoning : false
+reasoning : true
 
 # Extra options passed to Ollama /api/generate
 options:
-  num_ctx: 6096
+  num_ctx: 4096
   top_p: 0.9
   top_k: 40
+  repeatPenalty: 1.1
 
 prompt_config:
   identify_sections: "v1"

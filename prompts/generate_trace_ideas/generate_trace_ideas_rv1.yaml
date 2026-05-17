@@ -19,8 +19,8 @@ template: |
   2. Understand and interpret behavior
   3. Perform an imbalance analysis to detect imbalance-related risks
   4. Generate diverse potential issues
-  You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.
-  THOUGHTS:
+  YOUR PREVIOUS THOUGHTS (USE THEM):
   {sections}
   {understanding}
   {balanceanalysis}
+  You must use the provided tool/schema to format your response. Output ONLY valid JSON matching the schema, and no other text.

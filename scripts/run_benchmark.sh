@@ -211,7 +211,7 @@ fi
 for model in "${MODELS_TO_PULL[@]}"; do
   echo "Pulling model: ${model}..."
   ssh "${SSH_OPTS[@]}" "${REMOTE_USER}@${PUBLIC_IP}" \
-    "OLLAMA_MODELS='${OLLAMA_MODELS_DIR}' ollama pull '${model}'"
+    "OLLAMA_MODELS=${OLLAMA_MODELS_DIR} ollama pull ${model}"
 done
 
 # DEBUG:

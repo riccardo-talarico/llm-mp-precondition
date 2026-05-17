@@ -28,6 +28,7 @@ class OllamaExperimentConfig:
             "top_p": self.options.get("top_p"), 
             "top_k": self.options.get("top_k"),
             "num_ctx": self.options.get("num_ctx"),
+            "repeatPenalty": self.options.get("repeatPenalty",1.1),
             "prompt_config": self.options.get("prompt_config", default=None),
             "reasoning": self.reasoning
         }
