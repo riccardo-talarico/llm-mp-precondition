@@ -41,6 +41,7 @@ class VerificationAgent():
           num_ctx=ollama_cfg.options.get("num_ctx", 4096),
           top_p=ollama_cfg.options.get("top_p", 0.9),
           top_k=ollama_cfg.options.get("top_k", 40),
+          repeatPenalty=ollama_cfg.options.get("repeatPenalty",1.1),
           seed = ollama_cfg.seed,
           reasoning = ollama_cfg.reasoning
       )

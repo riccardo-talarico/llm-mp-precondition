@@ -46,6 +46,7 @@ class ChainOfDebugAgent():
             num_ctx=ollama_cfg.options.get("num_ctx", 4096),
             top_p=ollama_cfg.options.get("top_p", 0.9),
             top_k=ollama_cfg.options.get("top_k", 40),
+            repeatPenalty=ollama_cfg.options.get("repeatPenalty", 1.1),
             seed = ollama_cfg.seed,
             reasoning = ollama_cfg.reasoning
             )
@@ -264,14 +265,16 @@ class ChainOfDebugAgent():
         """
         The function assigns sequentially to each LLM worker a possible trace idea to develop.
         """
-        lis = state["trace_ideas"].ideas
-        if lis is None or len(lis)==0:
+
+        
+        if state["trace_ideas"] is None or len(state["trace_ideas"].ideas)==0:
             if self.debug_level > 0:
                 print("Empty ideas list")
-                if lis is None:
+                if state["trace_ideas"] is None:
                     print("idea list is none")
             return {"active_idea":None}
         else:
+            lis = state["trace_ideas"].ideas
             if self.debug_level > 0:
                 print(f"Remaining ideas: {len(lis)}")
             active_idea = lis[0]
